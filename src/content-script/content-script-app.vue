@@ -259,8 +259,15 @@ export default {
             // Adding books that are no longer sold into series.
             if ( key === 'books' ) {              
               _.each( book.series, ( series ) => {
+                
                 const foundSeries = _.find(hotpotato.series, { asin: series.asin});
-                const detachedFromSeries = !_.includes(foundSeries.books, book.asin);
+                
+                const books = _.get(foundSeries, 'books');
+                const sourceBookAsin = _.get(book, 'asin');
+                // Remember to fix this. Clearly in my library this is conditional is causing issues that shouldn't happen.
+                if ( !books || !sourceBookAsin ) return;
+                
+                const detachedFromSeries = !_.includes(books, sourceBookAsin);
                 if ( detachedFromSeries ) {
                   foundSeries.detachedBooks = true;
                   foundSeries.books.push( book.asin );
