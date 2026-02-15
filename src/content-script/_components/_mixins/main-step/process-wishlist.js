@@ -189,10 +189,12 @@ export default {
             if ( starsWrapper ) {
               const ratingSpan   = starsWrapper.nextElementSibling;
               const ratingsSpan  = ratingSpan.nextElementSibling;
+              
               // RATING
-              book.rating = Number( DOMPurify.sanitize(ratingSpan.textContent.match(/^\d\.?(\d)?/g)) ); // returns the first number
+              const ratingText = _.get(ratingSpan, 'textContent');
+              if ( ratingText ) book.rating = Number( DOMPurify.sanitize(ratingText.match(/^\d\.?(\d)?/g)) ); // returns the first number
               // RATINGS
-              let ratings = ratingsSpan.textContent;
+              let ratings = _.get(ratingsSpan, 'textContent');
               if ( ratings ) {
                 ratings = DOMPurify.sanitize(ratings);
                 ratings = ratings.match(/\d/g);
