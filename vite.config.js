@@ -28,7 +28,7 @@ import { visualizer } from 'rollup-plugin-visualizer';
 const src = function( path, prefix ) {
   prefix = prefix || './src';
   path = path || '';
-  return fileURLToPath(new URL( prefix+'/'+path, import.meta.url ));
+  return fileURLToPath(new URL( prefix+'/'+path, import.meta.url )).replace(/\\/g, '/');
 };
 const dist = function( path ) { return src(path, './dist'); };
 const root = function( path ) { return src(path, './'); };

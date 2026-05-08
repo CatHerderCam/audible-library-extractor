@@ -27,3 +27,13 @@ coverage
 *.sln
 *.sw?
 stats.html
+
+# playwright-extract.js artifacts
+.playwright-session/
+output/
+.library-repo/
+.gallery-extract/
+.env
+
+# Generated lock file from npm (project uses yarn.lock)
+package-lock.json

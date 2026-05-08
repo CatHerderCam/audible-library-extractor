@@ -1,72 +1,155 @@
-# Audible Library Extractor browser extension ((metadata only)) <!-- omit in toc -->
-[![](https://img.shields.io/github/v/release/joonaspaakko/audible-library-extractor?include_prereleases&label=latest%20version)](https://github.com/joonaspaakko/audible-library-extractor/releases/latest)
-[![](https://img.shields.io/github/release-date/joonaspaakko/audible-library-extractor?label=latest%20version)](https://github.com/joonaspaakko/audible-library-extractor/releases/latest)
-[![](https://img.shields.io/github/issues/joonaspaakko/audible-library-extractor/bug?label=known%20bugs)](https://github.com/joonaspaakko/audible-library-extractor/labels/bug)
+# Audible Library Extractor — Automated Export
 
-> Supported browsers: Chrome, Edge (and other Chromium based browsers), ~~Firefox~~ (not past v.0.2.8)
+This is a fork of [joonaspaakko/audible-library-extractor](https://github.com/joonaspaakko/audible-library-extractor) with an added automation script that extracts your Audible library and publishes it as a static gallery to GitHub (with optional Cloudflare Pages deployment) on a schedule — no manual clicking required.
 
-**Automatically generates a searchable gallery** from your Audible **library**. Additionally, you can extract **collections** and **wishlist**too. If you upload the gallery online, you can share it with others or you can use the gallery to find your next listen on mobile and  [easily open the book in Audible’s mobile app](applewebdata://130BB437-11BF-4F93-9793-DF8D1A3A9464/@joonaspaakko/s/audible-library-extractor/~/drafts/-M_UXBJG3cmCydpyKhOe/gallery/next-listen-mobile-use#open-book-in-audibles-mobile-app) .
-You can check my Audible library [here](https://joonaspaakko.github.io/my-audible-library/).
+---
 
-## Install
-- ~~Firefox - [https://addons.mozilla.org/firefox/addon/audible-library-extractor/](https://addons.mozilla.org/firefox/addon/audible-library-extractor/)~~ (not past v.0.2.8)
-- Chrome - [https://chrome.google.com/webstore/detail/audible-library-extractor/deifcolkciolkllaikijldnjeloeaall](https://chrome.google.com/webstore/detail/audible-library-extractor/deifcolkciolkllaikijldnjeloeaall)
-    - This version can also be installed in the Chromium based Edge and other Chromium based browsers.
+## What it does
 
-## Extension documentation
-Here you will find general usage information as well as instructions for sharing the gallery: [documentation](https://joonaspaakko.gitbook.io/audible-library-extractor/).
+1. Opens a headless Chromium browser with the extension loaded
+2. Navigates to your Audible library and runs the extraction
+3. Downloads the standalone gallery as a zip
+4. Pushes the gallery files to a GitHub repository
+5. (Optional) Cloudflare Pages automatically deploys from that repository
 
-<br/><br/>
+---
 
-----
+## Prerequisites
 
-![](https://github.com/joonaspaakko/audible-library-extractor/blob/master/screenshots/audible-library-extractor-screenshot-1.png)
+- [Node.js](https://nodejs.org/) (any recent LTS)
+- [Git for Windows](https://git-scm.com/download/win) (provides Git Bash, required for the build)
+- A GitHub repository to publish the gallery to
+- A [GitHub Personal Access Token](https://github.com/settings/tokens) with write access to that repository
 
-[screenshot 1](https://github.com/joonaspaakko/audible-library-extractor/blob/master/screenshots/audible-library-extractor-screenshot-1.png?raw=true), [screenshot 2](https://github.com/joonaspaakko/audible-library-extractor/blob/master/screenshots/audible-library-extractor-screenshot-2.png?raw=true), [screenshot 3](https://github.com/joonaspaakko/audible-library-extractor/blob/master/screenshots/audible-library-extractor-screenshot-5.png?raw=true), [screenshot 4](https://github.com/joonaspaakko/audible-library-extractor/blob/master/screenshots/audible-library-extractor-screenshot-4.png?raw=true), [screenshot 5](https://github.com/joonaspaakko/audible-library-extractor/blob/master/screenshots/audible-library-extractor-screenshot-3.png?raw=true)
+---
 
-<br/><br/>
+## Setup
 
-----
-<br/><br/>
+### 1. Install dependencies
 
-## How to use the extension <!-- omit in toc -->
+```powershell
+npm install
+npx playwright install chromium
+```
 
-1. Go to your Audible library, 
-2. Click the `Audible Library Extractor` button below the search input or the extension icon.
-3. In the next view you can choose what to extract and start the extraction process by clicking the big blue button: [screenshot](https://github.com/joonaspaakko/audible-library-extractor/blob/master/screenshots/audible-library-extractor-screenshot-4.png?raw=true) 
-    - The extraction will take a few minutes. It depends on the size of your library and any of the other things you choose to extract.
-    - After the extraction is done the current tab is closed and a new output page for the gallery is opened.
+### 2. Configure your environment
 
-<br/><br/>
+Copy the example env file and fill in your values:
 
-----
-<br/><br/>
+```powershell
+copy .env.example .env
+```
 
-## How to install development releases
+Open `.env` and set the two required variables:
 
-<details><summary>Read more...</summary>
-<br/><br/>
+| Variable | Description |
+|---|---|
+| `GITHUB_TOKEN` | GitHub Personal Access Token (see below) |
+| `GITHUB_REPO_URL` | HTTPS URL of the repo to publish to, e.g. `https://github.com/your-username/your-repo.git` |
 
-> These instructions are for [all releases](https://github.com/joonaspaakko/audible-library-extractor/releases) you can find on GitHub.
+Optional variables (leave commented out to use defaults):
 
-I would not recommend installing these development releases. For one, you get to retain previously extracted data updating through the official channels, but unfortunately not when updating dev releases.
+| Variable | Default | Description |
+|---|---|---|
+| `AUDIBLE_DOMAIN` | `com` | Audible region TLD — e.g. `co.uk`, `de`, `co.jp` |
+| `GITHUB_BRANCH` | `main` | Branch to push the gallery to |
 
-### Chrome  <!-- omit in toc -->
-  
-0. Get the [latest audible-library-extractor zip](https://github.com/joonaspaakko/audible-library-extractor/releases/latest) file from the [releases page](https://github.com/joonaspaakko/audible-library-extractor/releases).
-1. Go to the address:  `chrome:extensions`.
-	- Or:  `Window > Extensions`
-2. Turn on the developer mode from the top right
-3. Drag the downloaded `.zip` file in the browser window to install
+#### Creating a GitHub Personal Access Token
 
-### Firefox  <!-- omit in toc -->
+1. Go to **GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens**
+2. Click **Generate new token**
+3. Under **Repository access**, select **Only select repositories** and choose your gallery repo
+4. Under **Permissions**, set **Contents** to **Read and write**
+5. Generate and copy the token into your `.env` file
 
-> This is a temporary installation that will be gone after a restart. No way around it, other than installing it through the Firefox addon website, which is preferred anyways.
+### 3. Build the extension
 
-0. Get the [latest audible-library-extractor zip](https://github.com/joonaspaakko/audible-library-extractor/releases/latest) file from the [releases page](https://github.com/joonaspaakko/audible-library-extractor/releases).
-1. Go to the address: `about:debugging#/runtime/this-firefox`
-	- Alternatively:  `Tools > Add-ons` and click the gear icon on the top right and then `Debug Addons`
-2. Then on the top right click the button: `Load Temporary Add-on...`
-3. Locate and add the downloaded release `.zip` file.
+```powershell
+npm run build
+```
 
-</details>
+> **Note:** This must be re-run whenever you pull updates to the extension source.
+
+---
+
+## Running the script
+
+```powershell
+node playwright-extract.js
+```
+
+Or via npm:
+
+```powershell
+npm run extract
+```
+
+**First run:** A browser window will open. If you are not logged into Audible, log in and wait to be redirected to your library page. The script takes over from there automatically.
+
+**Subsequent runs:** Your session is saved in `.playwright-session/` so no login is needed.
+
+The script will:
+- Click the extension button and start the library extraction
+- Wait for the gallery page to open (up to 30 minutes for large libraries)
+- Package and download `ALE-gallery.zip`
+- Clone your GitHub repo (first run) or reset it to match the remote (subsequent runs)
+- Replace the repo contents with the new gallery files and push
+
+---
+
+## Scheduling automatic weekly runs
+
+A Windows Task Scheduler task can be created to run the extraction automatically. The following PowerShell command creates a task that runs every **Monday at 1 PM** and catches up if the machine was off at that time:
+
+```powershell
+$nodePath = (where.exe node | Select-Object -First 1).Trim()
+$action   = New-ScheduledTaskAction -Execute $nodePath -Argument "playwright-extract.js" -WorkingDirectory "C:\path\to\audible-library-extractor"
+$trigger  = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At "13:00"
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 4) -RunOnlyIfNetworkAvailable
+$principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
+Register-ScheduledTask -TaskName "AudibleLibraryExtract" -TaskPath "\AudibleLibrary\" -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force
+```
+
+> **Note:** The script opens a real browser window, so the machine must be logged in when the task runs. It cannot run fully headless due to a Chrome extension limitation.
+
+To run the task manually at any time:
+
+```powershell
+Start-ScheduledTask -TaskPath "\AudibleLibrary\" -TaskName "AudibleLibraryExtract"
+```
+
+---
+
+## Cloudflare Pages deployment
+
+1. Create a new Cloudflare Pages project connected to your gallery GitHub repository
+2. Set the build command to **none** (the repo contains pre-built static files)
+3. Set the output directory to `/` (root)
+
+Every push from the extraction script will trigger a new deployment automatically.
+
+---
+
+## Project structure
+
+```
+.env                      # Your local config (gitignored — never commit this)
+.env.example              # Template — copy to .env and fill in your values
+playwright-extract.js     # Automation script
+.playwright-session/      # Saved browser session (gitignored)
+output/                   # Downloaded gallery zips (gitignored)
+.library-repo/            # Local clone of your gallery repo (gitignored)
+.gallery-extract/         # Temporary extraction directory (gitignored)
+src/                      # Extension source code
+dist/                     # Built extension (gitignored)
+```
+
+---
+
+## Original project
+
+This repository is a fork of **[audible-library-extractor](https://github.com/joonaspaakko/audible-library-extractor)** by [joonaspaakko](https://github.com/joonaspaakko).
+
+All credit for the extension itself — the library scraping, gallery UI, and export functionality — belongs to the original author. This fork adds only the `playwright-extract.js` automation script and related configuration.
+
+For documentation on the extension's features (gallery sharing, CSV export, etc.) see the [original project docs](https://joonaspaakko.gitbook.io/audible-library-extractor/).

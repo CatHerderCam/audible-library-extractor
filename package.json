@@ -8,7 +8,8 @@
     "dev2": "yarn vite build --watch",
     "build": "gallerySingleFile=true yarn vite build && wallpaperSingleFile=true yarn vite build && yarn vite build && node zipper.js",
     "build1": "yarn vite build",
-    "preview": "yarn vite preview --port 4173"
+    "preview": "yarn vite preview --port 4173",
+    "extract": "node playwright-extract.js"
   },
   "dependencies": {
     "@crxjs/vite-plugin": "^2.0.2",
@@ -61,6 +62,7 @@
     "@vitejs/plugin-vue": "^5.0.4",
     "naive-ui": "^2.40.4",
     "picocolors": "^1.1.1",
+    "playwright": "^1.59.1",
     "rollup-plugin-copy": "^3.5.0",
     "rollup-plugin-node-builtins": "^2.1.2",
     "rollup-plugin-node-globals": "^1.4.0",
