@@ -43,20 +43,29 @@
               <fa6-solid-headphones-simple/>
               whispersync
             </div>
+
+            <div class="info-tag preorder" v-if="isPreorder" v-tippy="{ maxWidth: 300 }" :content="preorderReleaseDate ? ('Pre-ordered. Releases ' + preorderReleaseDate) : 'Pre-ordered'">
+              <fa6-solid-clock/>
+              preorder
+            </div>
           </div>
           
           <div class="release-date" v-if="book.releaseDate" v-tippy content="YYYY-MM-DD">
             <span class="strong-label">Released: </span>
             <span>{{ book.releaseDate }}</span>
           </div>
-          
+          <div class="purchase-date" v-if="book.purchaseDate" v-tippy content="YYYY-MM-DD">
+            <span class="strong-label">Purchased: </span>
+            <span>{{ book.purchaseDate }}</span>
+          </div>
+
         </div>
         
         
         <div class="meta-padding"></div>
         
         <div class="my-review-wrapper" v-if="review">
-          <div class="my-review-btn" :class="{ active: showReview }" @click="clickedShowReview">
+          <div class="my-review-btn" :class="{ active: showReview }" @click="clickedShowReview" @mousedown="$haptic(1)">
             <fluent-document-one-page-sparkle-20-regular /> My review 
           </div>
           
@@ -80,6 +89,7 @@
     class="summary-read-more"
     ref="readMoreBtn"
     @click="summaryReadMoreclick"
+    @mousedown="$haptic(1)"
     v-if="showReadMore"
     >
       <!-- 
@@ -98,13 +108,17 @@ import makeUrl from "@output-mixins/gallery-makeFullUrl.js";
 
 export default {
   name: "bookSummary",
-  props: ["book", "bookSummary", "mobileWidth"],
+  props: ["book", "bookSummary", "mobileWidth", "readmoreOpen"],
+  emits: ["update:readmoreOpen"],
   mixins: [makeUrl],
   data: function() {
     return {
       summary: {
         readmore: {
-          toggle: false,  
+          // Kept alive by the parent (panelSummaryOpen) so re-reading it on
+          // remount (hideFirstSection unmounts this panel on flip) doesn't
+          // lose whether the reader had it expanded.
+          toggle: this.readmoreOpen || false,
           exists: false
         },
         maxHeight: null,
@@ -127,6 +141,12 @@ export default {
     summaryHTML: function() {
       return this.book.summary || this.bookSummary || this.book.blurb;
     },
+    isPreorder: function() {
+      return !!(this.book.isPreorder || (this.book.notInLibrary && this.book.preorder));
+    },
+    preorderReleaseDate: function() {
+      return this.book.releaseDate || _.get(this.book, 'preorder.releaseDate');
+    },
     showReadMore: function() {
       const summary = this.summary;
       // console.log( 'showReadmore - Has maxHeightTemp: ', summary.maxHeightTemp, 'summary.fullHeight > summary.maxHeightTemp', (summary.fullHeight > summary.maxHeightTemp) )
@@ -134,7 +154,7 @@ export default {
       return summary.fullHeight > summary.maxHeightTemp;
     },
     review() {
-      return _.find( this.$store.state.library.userReviews, { asin: this.book.asin });
+      return _.find( this.$store.state.audibledata.userReviews, { asin: this.book.asin });
     },
     reviewSummary() {
       return '<h2>' + _.get(this.review, 'title') + '</h2>' + _.get(this.review, 'summary');
@@ -166,19 +186,18 @@ export default {
       this.$nextTick(function() {
           
         const minHeight = _.get(this.$refs, 'summaryMetaTop.offsetHeight', 0);
-        const minHeightExtra = minHeight + 300;
+        const minHeightExtra = minHeight + (this.mobileWidth ? 340 : 230);
         const summaryFullHeight = _.get(this.$refs, 'summary.offsetHeight', 0);
         // const summaryFullHeight = _.get(this.$refs, 'summary.scrollHeight', 0);
         this.summary.fullHeight = summaryFullHeight;
         
-        // const wrapper = document.querySelector('#ale-bookdetails .details-wrap');
         const sidebar = document.querySelector('#ale-bookdetails .information');
         const sidebarHeight = _.get( sidebar, 'offsetHeight', 0 );
+
+        let maxHeight = Math.max(sidebarHeight, minHeightExtra);
+        if ( this.mobileWidth ) maxHeight = minHeightExtra;
         
-        let maxHeight = sidebarHeight;
-        if ( this.mobileWidth || summaryFullHeight > minHeightExtra && minHeightExtra > sidebarHeight ) maxHeight = minHeightExtra; 
-        
-        this.summary.maxHeight = maxHeight;
+        this.summary.maxHeight = this.summary.readmore.toggle ? "none" : maxHeight;
         this.summary.maxHeightTemp = maxHeight;
         // console.log( minHeightExtra )
         // console.log('%c' + ' ' + '', 'background: #003191; color: #fff; padding: 2px 5px; border-radius: 8px;', _.clone(this.summary));
@@ -195,7 +214,8 @@ export default {
       
       this.summary.readmore.toggle = !this.summary.readmore.toggle ? true : false;
       this.summary.maxHeight = this.summary.readmore.toggle ? "none" : this.summary.maxHeightTemp;
-      
+      this.$emit("update:readmoreOpen", this.summary.readmore.toggle);
+
       // Scrolls up in an attempt to retain the scroll position in relation to the readmore button
       if ( !this.summary.readmore.toggle ) {
         const btnOffset = this.$refs.readMoreBtn.getBoundingClientRect().top;
@@ -277,16 +297,25 @@ export default {
   }
   .inline-children > * { display: inline-block; }
   
-  .release-date {
+  .release-date, .purchase-date {
     padding-top: 5px;
+  }
+  .purchase-date {
+    margin-left: 10px;
   }
   
   .review-ratings {
     @extend .no-selection;
     display: flex;
     flex-direction: row;
+    flex-wrap: wrap;
     gap: 10px;
     margin-top: 10px;
+    .review-rating {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
   }
   
   .my-review-btn {
@@ -306,7 +335,6 @@ export default {
       color: themed(frontColor);
       border: 1px solid rgba(themed(frontColor), .35);
       border-radius: 6px;
-      box-shadow: $shadowMedium rgba(0,0,0,0.45);
       &.active {
         border-color: themed(audibleOrange);
         svg {
@@ -387,6 +415,10 @@ export default {
         background: #61bd34;
       }
     }
+
+    &.preorder {
+      background: #8e44ec;
+    }
   }
   
   .summary-inner-wrap {
@@ -459,6 +491,9 @@ export default {
   .categories {
     line-height: 1.2em;
     margin-top: 4px;
+    svg {
+      font-size: .5em;
+    }
   }
   .smoll-text {
     font-size: 0.8em;

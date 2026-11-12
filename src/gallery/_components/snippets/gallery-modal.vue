@@ -6,7 +6,7 @@
         
         <slot />
         
-        <div class="close-btn" @click="close" v-shortkey.once="['esc']" @shortkey="close">
+        <div class="close-btn" @click="close" @mousedown="$haptic(1)" v-shortkey.once="['esc']" @shortkey="close">
           <fa-solid-times/>
         </div>
         
@@ -18,7 +18,7 @@
 <script>
 export default {
   name: "modal",
-  props: [ 'toggled' ],
+  props: [ 'toggled', 'preventClose' ],
   data: function() {
     return {
       modalOpen: true,
@@ -52,6 +52,7 @@ export default {
       this.$emit('closeModal');
     },
     closeOverlay: function( e ) {
+      if ( this.preventClose ) return;
       let vue = this;
       if ( e.target === this.$refs.modalGrandpa || e.target === this.$refs.modalPapa ) {
         vue.close();
@@ -151,10 +152,8 @@ export default {
     }
 
     .export-group {
-      padding: 55px 60px;
-      padding-bottom: 50px;
+      padding: 30px;
       border-top: 1px solid rgba(#fff, 0.07);
-      border-bottom: 1px solid rgba(#000, 0.25);
       &:first-child {
         border-top: none;
       }
@@ -233,7 +232,6 @@ export default {
       // text-align: left;
       text-align: center;
       position: relative;
-      right: -10px;
     }
 
     .btn-wrapper {

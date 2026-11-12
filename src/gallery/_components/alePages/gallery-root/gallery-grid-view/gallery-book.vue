@@ -5,21 +5,24 @@
     
     <div class="ale-cover">
       
-      <div class="ale-play-sample" v-if="sticky.bookDetailSettings.playButton" @click="playSample(book, index)">
+      <div class="ale-cover-icon ale-play-sample" v-if="!coverButtonsHidden && sticky.bookDetailSettings.playButton" @click="playSample(book, index)">
         <div><fa6-solid-play/></div>
       </div>
-      <div class="ale-play-sample cloud-player-icon" v-else-if="book.asin && sticky.bookDetailSettings.cloudPlayer">
-        <gallery-open-web-player :size="20" :book="book" :icon="true" :tooltip="false" :noBG="true" />
+      <div class="ale-cover-icon cloud-player-icon" v-else-if="!coverButtonsHidden && book.asin && sticky.bookDetailSettings.cloudPlayer">
+        <gallery-open-web-player :size="20" :book="book" :icon="true" :tooltip="false" />
+      </div>
+      <div class="ale-cover-icon app-link-icon" v-else-if="!coverButtonsHidden && book.asin && sticky.bookDetailSettings.appLink && $store.state.standalone">
+        <gallery-open-in-app :size="20" :book="book" />
       </div>
 
       <div
         class="ale-click-wrap"
-        @click="!book.asin ? null : $compEmitter.emit('book-clicked', book.asin)"
+        @mousedown="onPressStart"
+        @touchstart="onPressStart"
+        @click="openBook"
       >
-        
-        <div class="blurb-tooltip" v-if="book.blurb && sticky.bookDetailSettings.blurb" v-tippy="{ delay: 150, placement: 'left', flipBehavior: ['left', 'right', 'top', 'bottom'], maxWidth: 300 }" :content="book.blurb"></div>
-      
-        <div class="info-icons-wrapper">
+
+        <div class="info-icons-wrapper" v-if="!indicatorsHidden">
           <!-- FAVORITE -->
           <div class="favorite-marker" v-if="book.favorite && sticky.bookDetailSettings.favorite">
             <span><fa-solid-heart/></span>
@@ -49,6 +52,12 @@
             <span v-if="book.whispersync !== 'owned'">Available in kindle</span>
             <span v-else>In your kindle</span> -->
           </div>
+
+          <!-- PRE-ORDERED -->
+          <div class="preorder-marker" v-if="(book.isPreorder || book.preorder) && sticky.bookDetailSettings.preorder">
+            <span><fa6-solid-clock/></span>
+            <span>preorder</span>
+          </div>
         </div>
       
         <div class="ale-info-indicator" :class="{ 'not-in-library': book.notInLibrary, 'open-details-icon': !book.notInLibrary }">
@@ -68,11 +77,43 @@
         </div>
         <div v-else class="cover-img-wrapper">
           <transition name="fade">
-            <img v-show="imageLoaded" @load="$emit('update:imageLoaded', true)" class="ale-cover-image" :class="{ loaded: imageLoaded }" crossorigin="anonymous" draggable="false" @touchstart.prevent :src="makeCoverUrl(book.cover, 280)" alt="" />
+            <img v-show="imageLoaded" @load="imageLoaded = true" class="ale-cover-image" :class="{ loaded: imageLoaded }" crossorigin="anonymous" draggable="false" @touchstart.prevent :src="makeCoverUrl(book.cover)" alt="" />
           </transition>
         </div>
       </div>
     </div>
+
+    <!-- WHOLE-CARD CLICK TARGET (details modes)
+         The cover's ale-click-wrap can't stretch past the cover: .ale-cover clips to its
+         own bounds with overflow hidden. So in the details modes, where the whole card
+         opens the book, lay a transparent overlay over the entire card to catch clicks on
+         the text and the padding gaps too. It sits below the cover icons (z-index 999), so
+         the play sample / cloud player buttons stay clickable, and carries the same press
+         and click handlers so the blurb peek gesture works anywhere on the card. -->
+    <div
+      v-if="detailsMode && detailsMode !== 'off'"
+      class="card-click-overlay"
+      @mousedown="onPressStart"
+      @touchstart="onPressStart"
+      @click="openBook"
+    ></div>
+
+    <!-- Title/author/length card text. Stacked lays it under the cover, list beside it;
+         the layout is driven by the wrapper class, this just renders the lines. The
+         card-click-overlay above sits over this, so the strip itself needs no handler. -->
+    <div v-if="detailsMode && detailsMode !== 'off'" class="book-details-strip">
+      <div class="book-title" v-if="book.titleShort || book.title" v-html="book.titleShort || book.title"></div>
+      <div class="book-author" v-if="book.authors && book.authors[0]">
+        <fa6-solid-user-pen v-if="detailsMode === 'list'" class="strip-icon" />{{ book.authors[0].name }}
+      </div>
+      <div class="book-narrator" v-if="detailsMode === 'list' && book.narrators && book.narrators[0]">
+        <fa6-solid-microphone class="strip-icon" />{{ book.narrators[0].name }}
+      </div>
+      <!-- Discontinued books have no length. Render a non-breaking space so the row still
+           exists and the block stays top-aligned with other cards rather than re-centering. -->
+      <div class="book-length" v-html="book.length || '&nbsp;'"></div>
+    </div>
+
   </div>
 </template>
 
@@ -81,17 +122,47 @@ import makeCoverUrl from "@output-mixins/gallery-makeCoverUrl.js";
 
 export default {
   name: "book",
-  props: ["book", "index", "sortValuesEnabled", "imageLoaded"],
+  props: ["book", "index", "sortValuesEnabled", "detailsMode"],
   mixins: [ makeCoverUrl ],
+  // Provided by the blurb-peek overlay mounted in the grid view; null elsewhere.
+  inject: {
+    blurbPeek: { default: null },
+  },
   data: function() {
     return {
       store: this.$store.state,
       sticky: this.$store.state.sticky,
       smartLink: "https://smart.link/o3waqx4wg1gdn?asin=",
+      imageLoaded: false,
     };
   },
+  computed: {
+
+    coverButtonsHidden: function() {
+      return ( this.$store.state.sticky.coverSize || 180 ) < 110;
+    },
+
+    indicatorsHidden: function() {
+      return ( this.$store.state.sticky.coverSize || 180 ) < 80;
+    },
+
+  },
+
   methods: {
-    
+
+    onPressStart: function( event ) {
+      this.$haptic( 1 );
+      if ( !this.book.asin || !this.blurbPeek ) return;
+      this.blurbPeek.start( event );
+    },
+
+    openBook: function() {
+      if ( !this.book.asin ) return;
+      // The press that just ended was a blurb peek, not a tap: swallow the open.
+      if ( this.blurbPeek && this.blurbPeek.consumeClick() ) return;
+      this.$compEmitter.emit( 'book-clicked', this.book.asin );
+    },
+
     // imageAlt: function(book, index) {
     //   return book.authors[0].name + " - " + book.title;
     // },
@@ -129,6 +200,23 @@ export default {
   border-radius: 5px;
   overflow: hidden;
   background-clip: padding-box;
+  position: relative;
+
+  // Whole-card click target for the details modes. Fills the card above the text and the
+  // padding gaps. The cover is lifted above it (below) so the cover keeps its own click
+  // wrap and its play sample / cloud player buttons stay clickable, and this overlay only
+  // catches the regions the cover does not cover (text, padding).
+  .card-click-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    cursor: pointer;
+  }
+  // Keep the cover and its buttons above the overlay.
+  .ale-cover {
+    position: relative;
+    z-index: 6;
+  }
 
   .info-icons-wrapper {
     position: absolute;
@@ -186,6 +274,9 @@ export default {
       background: #106be6;
       // svg { font-size: 16px; }
     }
+    .preorder-marker {
+      background: #8e44ec;
+    }
   }
   &:hover .info-icons-wrapper {
     // left: 1px;
@@ -209,6 +300,65 @@ export default {
       }
     }
   }
+}
+
+// DETAILS CARD TEXT
+// The title/author/length block. This styles the lines themselves; the per-layout
+// placement (stacked under the cover vs. list beside it) and the card background live in
+// grid-view.vue, where the .details-stacked / .details-list ancestor classes are plain
+// globals and need no scope workarounds.
+.book-details-strip {
+  text-align: left;
+  line-height: 1.3;
+  overflow: hidden;
+  font-size: clamp(11px, calc(var(--cover-size, 180px) * 0.08), 20px);
+
+  .book-title {
+    font-size: 0.82em;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    @include themify($themes) {
+      color: themed(frontColor);
+    }
+  }
+  .book-author {
+    font-size: 0.75em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    @include themify($themes) {
+      color: rgba(themed(frontColor), .65);
+    }
+  }
+  .book-narrator {
+    font-size: 0.75em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    @include themify($themes) {
+      color: rgba(themed(frontColor), .5);
+    }
+  }
+  .book-length {
+    font-size: 0.72em;
+    @include themify($themes) {
+      color: rgba(themed(frontColor), .45);
+    }
+  }
+  .strip-icon {
+    margin-right: 4px;
+    font-size: 0.8em;
+    opacity: 0.5;
+    vertical-align: middle;
+    position: relative;
+    top: -0.05em;
+  }
+}
+
+.details-list .book-details-strip {
+  font-size: clamp(15px, calc(var(--cover-size, #{$detailsListCover}) * 0.17), 22px);
 }
 
 .smart-link {
@@ -277,7 +427,7 @@ export default {
     justify-items: center;
     align-items: center;
     @include themify($themes) {
-      background-color: lighten( themed(backColor), 10);
+      background-color: color.adjust(themed(backColor), $lightness: 10%);
     }
     img {
       position: absolute;
@@ -291,7 +441,7 @@ export default {
     padding-bottom: 100%;
     @include themify($themes) {
       color: themed(frontColor);
-      background-color: lighten( themed(backColor), 10);
+      background-color: color.adjust(themed(backColor), $lightness: 10%);
     }
     position: relative;
     z-index: 1;
@@ -400,6 +550,11 @@ export default {
   }
 }
 
+.ale-click-wrap {
+  will-change: backdrop-filter;
+  transform: translateZ(0);
+}
+
 .ale-click-wrap:hover {
   .ale-info-indicator {
     display: flex;
@@ -415,26 +570,25 @@ export default {
   }
 }
 
-.ale-play-sample {
+// SHARED BOUNDING BOX FOR THE COVER ICONS (play sample, cloud player, app link)
+// fixed square box so the icon can't collapse in on itself.
+.ale-cover-icon {
   display: none;
   position: absolute;
   z-index: 999;
   bottom: 0px;
   right: 0px;
   padding: 6px;
-  border-radius: 999999px;
   cursor: default;
+
+  // ICON BOX
+  // the cloud player and app link bring their own gradient circle, so the box
+  // here just keeps a fixed square so the icon can't collapse width wise.
   > div,
   > a {
-    font-size: 8px;
-    width: 20px;
-    height: 20px;
-    padding: 3px;
-    color: rgba(#fff, 1);
-    background: rgba(#000, 0.9);
-    border-radius: 999999px;
-    border: 2px solid rgba($audibleOrange, 0.9);
-    box-shadow: 0px 0px 9px rgba(#000, 0.9);
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
     cursor: pointer;
     display: flex;
     justify-content: center;
@@ -442,8 +596,21 @@ export default {
     justify-items: center;
     align-items: center;
   }
+  :deep(.gr-icon) {
+    box-shadow: 0px 0px 9px rgba(#000, 0.5);
+  }
+}
+
+// PLAY SAMPLE: stylized to match the gradient circular cloud player and app link icons.
+.ale-play-sample {
   > div {
-    font-size: 0.8em;
+    font-size: 11px;
+    color: rgba(#fff, 1);
+    background: #ffc338;
+    background: linear-gradient(to bottom, #ffc338 0%, #f29a33 100%);
+    border: 1px solid #f29a33;
+    border-radius: 999999px;
+    box-shadow: 0px 0px 9px rgba(#000, 0.5);
     > svg {
       position: relative;
       left: 1px;
@@ -463,39 +630,21 @@ export default {
   overflow: hidden;
 }
 
-.blurb-tooltip {
-  display: none;
-  position: absolute;
-  top: 0px;
-  left: 0px;
-  z-index: 10;
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 35px 35px 0 0;
-  border-color: rgba(#000000, .7) transparent transparent transparent;
-  outline: none;
-  border-radius: 0 0 100% 0;
-}
-
-.ale-click-wrap:hover .blurb-tooltip { display: block !important; }
-body.is-mobile .blurb-tooltip { display: none !important; }
-
 body.is-mobile .ale-click-wrap .ale-info-indicator.open-details-icon {
   display: none !important;
 }
 
 @media (max-width: 640px) {
   
-  .ale-play-sample {
-    :deep(> div),
-    :deep(> a) {
-      width: 15px;
-      height: 15px;
-      font-size: .6em;
-      :deep(img) {
-        max-width: 70%;
-      }
+  .ale-cover-icon {
+    padding: 4px;
+    > div,
+    :deep(> a > div) {
+      width: 20px;
+      height: 20px;
+    }
+    &.ale-play-sample > div {
+      font-size: 9px;
     }
   }
   

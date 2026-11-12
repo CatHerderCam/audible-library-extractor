@@ -40,13 +40,13 @@
         </div>
         
         <div class="player-buttons">
-          <div class="back" @click="$compEmitter.emit('audio-player-seek-back')"><ic-baseline-replay-30/></div>
+          <div class="back" @click="$compEmitter.emit('audio-player-seek-back')" @mousedown="$haptic(1)"><ic-baseline-replay-30/></div>
           <div class="play-pause">
-            <div class="play" v-if="!$store.state.audioPlayer.playing" @click="$compEmitter.emit('audio-player-play')"><ic-sharp-play-circle-filled/></div>
-            <div class="pause" v-else @click="$compEmitter.emit('audio-player-pause')"><ic-sharp-pause-circle-filled/></div>
+            <div class="play" v-if="!$store.state.audioPlayer.playing" @click="$compEmitter.emit('audio-player-play')" @mousedown="$haptic(1)"><ic-sharp-play-circle-filled/></div>
+            <div class="pause" v-else @click="$compEmitter.emit('audio-player-pause')" @mousedown="$haptic(1)"><ic-sharp-pause-circle-filled/></div>
           </div>
           <!-- <div class="stop" @click="$compEmitter.emit('audio-player-stop')">          <fa-solid-stop/></div> -->
-          <div class="forward" @click="$compEmitter.emit('audio-player-seek-forward')"><ic-baseline-forward-30/></div>
+          <div class="forward" @click="$compEmitter.emit('audio-player-seek-forward')" @mousedown="$haptic(1)"><ic-baseline-forward-30/></div>
         </div>
       </div>
       
@@ -112,7 +112,7 @@ export default {
 
 #audio-player {
   @include themify($themes) {
-    background: darken( themed(elementColor), 5);
+    background: color.adjust(themed(elementColor), $lightness: -5%);
     flex: unset;
     -webkit-touch-callout: none;
     -webkit-user-select: none;
@@ -127,7 +127,7 @@ export default {
     margin-top: auto !important;
     box-sizing: border-box;
     // background: themed(backColor);
-    // background: darken( themed(elementColor), 5);
+    // background: color.adjust(themed(elementColor), $lightness: -5%);
     color: themed(frontColor);
     position: fixed;
     z-index: 9999999999;

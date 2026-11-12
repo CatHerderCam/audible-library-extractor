@@ -5,6 +5,7 @@
   target="_blank" rel="noopener noreferrer"
   class="good-reads-icon"
   :class="{ 'muted': muted, 'placeholder': !goodreadsUrl }"
+  @mousedown="$haptic(1)"
   >
     <div
       v-if="icon"
@@ -106,7 +107,7 @@ img {
 .muted:active > div,
 .muted:focus > div {
   @include themify($themes) {
-    background: darken( themed(audibleOrange), 5) !important;
+    background: color.adjust(themed(audibleOrange), $lightness: -5%) !important;
   }
 }
 

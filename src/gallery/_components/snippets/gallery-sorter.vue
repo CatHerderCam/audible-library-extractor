@@ -12,7 +12,7 @@
       }" 
       :content="item.tippy ? item.tippy : false"
     >
-      <label class="sorter-button" :class="{ ranged: item.range, 'faux-disabled': (item.type === 'filterExtras' ? filterAmounts < 1 : false), 'is-dropdown': item.dropdownOpts }">
+      <label class="sorter-button" :class="{ ranged: item.range, 'faux-disabled': (item.type === 'filterExtras' ? filterAmounts < 1 : false), 'is-dropdown': item.dropdownOpts }" @mousedown="$haptic(1)">
 
         <!-- LABEL in the front -->
         <span v-if="label === false" class="input-label" :class="{ active: isActiveSortItem(item) }">
@@ -33,15 +33,16 @@
           <fa-regular-dot-circle data-icon="circle" />
         </span>
         <!-- CHECKBOXES -->
-        <span v-else class="checkbox">
-          <ic-round-square data-icon="square" />
+        <span v-else class="checkbox" :class="{ 'has-field-icon': fieldIcon }">
+          <ic-round-square data-icon="square" v-if="!fieldIcon" />
+          <span v-else data-icon="field" v-html="fieldIcon"></span>
           <fa-solid-check data-icon="check"/>
           <!-- <ion-checkmark-round data-icon="check"/> -->
         </span>
         <!-- LABEL in the back -->
         <span v-if="label !== false" class="input-label" :class="{ active: isActiveSortItem(item) }">
           <span>
-            {{ item.label || item.key.replace(".name", "") }}
+            {{ resolvedLabel || item.key.replace(".name", "") }}
             <span v-if="item.dropdownOpts" class="dropdown-label-suffix">
               <span class="label-exclude" v-if="item.exclude">Exclude</span>
               <span class="label-include" v-else>Include</span>
@@ -65,9 +66,8 @@
       </label>
 
       <div class="range-slider" v-if="item.range">
-        <span style="font-size: 13px; line-height: 13px; cursor: w-resize;" @click="adjustRange('left')">{{ range.value[0] }}{{ item.rangeSuffix }}</span>
-        
-        <vue-slider 
+        <span class="min-number" @click="adjustRange('left')" @mousedown="$haptic(1)">{{ range.value[0] }}{{ item.rangeSuffix }}</span>
+        <vue-slider
         :disabled="range.disabled"
         :dragOnClick="true"
         :adsorb="true"
@@ -89,7 +89,7 @@
         @drag-start="$store.commit('prop', { key: 'searchOptCloseGuard', value: true })"
         @drag-end="$store.commit('prop', { key: 'searchOptCloseGuard', value: false })"
         ></vue-slider>
-        <span style="font-size: 13px; line-height: 13px; cursor: e-resize;" @click="adjustRange('right')">{{ range.value[1] }}{{ item.rangeSuffix }}</span>
+        <span class="max-number" @click="adjustRange('right')" @mousedown="$haptic(1)">{{ range.value[1] }}{{ item.rangeSuffix }}</span>
       </div>
 
       <div v-if="!!item.dropdownOpts">
@@ -125,6 +125,21 @@ import slugify from "@output-mixins/gallery-slugify.js";
 import Multiselect from '@vueform/multiselect'
 // import timeStringToSeconds from "@output-mixins/gallery-timeStringToSeconds.js";
 // import secondsToTimeString from "@output-mixins/gallery-secondsToTimeString.js";
+
+// Same icon set the '@field' autocomplete uses (see fieldIcons in gallery-search.vue), keyed
+// by the 'icon' name each scope carries. Imported statically as raw SVGs (rather than resolved
+// via a dynamic component name) since unplugin-vue-components only rewrites template tags at
+// compile time, it can't resolve a runtime string passed to ':is'.
+import IconTitle      from '~icons/icon-park-solid/text?raw';
+import IconUserPen    from '~icons/fa6-solid/user-pen?raw';
+import IconMicrophone from '~icons/fa6-solid/microphone?raw';
+import IconLayerGroup from '~icons/fa6-solid/layer-group?raw';
+import IconFolder     from '~icons/fa6-solid/folder?raw';
+import IconTag        from '~icons/fa6-solid/tag?raw';
+import IconBuilding   from '~icons/fa6-solid/building?raw';
+import IconAlignLeft  from '~icons/fa6-solid/align-left?raw';
+import IconFileLines  from '~icons/fa6-solid/file-lines?raw';
+import IconHashtag    from '~icons/fa6-solid/hashtag?raw';
 
 export default {
   name: "sorter",
@@ -268,6 +283,31 @@ export default {
       }
     },
 
+    // Raw SVG for the scope's icon, keyed the same way as fieldIcons in gallery-search.vue,
+    // so a scope's checkbox row shows the same glyph as its '@field' autocomplete entry.
+    fieldIcon: function() {
+
+      const fieldIcons = {
+        'title':       IconTitle,
+        'user-pen':    IconUserPen,
+        'microphone':  IconMicrophone,
+        'layer-group': IconLayerGroup,
+        'folder':      IconFolder,
+        'tag':         IconTag,
+        'building':    IconBuilding,
+        'align-left':  IconAlignLeft,
+        'file-lines':  IconFileLines,
+        'hashtag':     IconHashtag,
+      };
+
+      return fieldIcons[ this.item.icon ] || false;
+
+    },
+    
+    resolvedLabel: function() {
+      return _.result( this.item, 'label' );
+    },
+
   },
 
   methods: {
@@ -341,15 +381,19 @@ export default {
         range: [0,0],
       };
 
+      const step = this.item.rangeInterval || Math.max( 1, Math.round( ( this.range.max - this.range.min ) / 100 ) );
+
       if ( direction === 'left' ) {
-        const min = this.range.min;
-        changes.range[0]    = min;
-        this.range.value = [min, this.range.value[1]];
+        let newMin = _.round( this.range.value[0] - step, 10 );
+            newMin = _.clamp( newMin, this.range.min, this.range.max );
+        changes.range[0] = newMin;
+        this.range.value = [newMin, this.range.value[1]];
       }
       else {
-        const max = this.range.max;
-        changes.range[1]    = max;
-        this.range.value = [this.range.value[0], max];
+        let newMax = _.round( this.range.value[1] + step, 10 );
+            newMax = _.clamp( newMax, this.range.min, this.range.max );
+        changes.range[1] = newMax;
+        this.range.value = [this.range.value[0], newMax];
       }
 
       if ( this.item.group ) changes.group = true;
@@ -379,9 +423,10 @@ export default {
       else if ( ( action.change.sort || action.randomize ) && action.noSortvalues ) {
         this.$store.commit("prop", { 'key': 'searchSort', value: false });
         action.start = 'start-sort';
-      } else if ( action.change.filter ) {
+      }
+      else if ( action.change.filter ) {
         action.start = 'start-filter';
-      } 
+      }
       
       this.saveOptions( value, specialBoy);
       this.$compEmitter.emit( action.start );
@@ -391,66 +436,76 @@ export default {
 
     saveOptions: function( value, specialBoy ) {
 
-      let vue = this;
-      const sortKey = this.item.key;
-      const sortType = this.item.type;
-      const queryObj = {};
-      
-      if ( sortKey === "sortValues" ) {
-        queryObj[ sortKey ] = value;
-      }
-      else if ( sortType === "sort" ) { 
-        
-        queryObj[ sortType ] = sortKey;
-        queryObj.sortDir = value ? "desc" : "asc";
-        
-      }
-      else if ( this.listName === "filter" ) {
-        if ( sortType === 'filter') {
-          
-          queryObj[ sortType ] = encodeURIComponent(this.$store.getters.filterKeys);
-          
-        }
-        if ( sortType === 'filterExtras' ) {
-          
-          if ( this.$route.name === 'series' ) {
-            if ( sortKey.match(/inLibrary|notInLibrary/) ) {
-              this.$store.commit('prop', { key: 'sticky.seriesFilters.' + sortKey, value: value });
-            }
-          }
-          
-          let vue = this;
-          const filterExtrasKeys = vue.$store.getters.filterExtrasKeys;
-          const queryKeysArray = !filterExtrasKeys ? false : _.map( filterExtrasKeys.split(','), function( key ) {
-            const keyItem = _.find( vue.$store.state.listRenderingOpts.filter, { key: key });
-            let range = _.get(vue.range, 'value');
-            if ( !range ) range = _.get(keyItem, 'range');
-            if ( range && _.isArray(range) ) {
-              return encodeURIComponent( key + ':' + range[0] +'-'+ (range[1]||range[0]) );
-            }
-            else if ( _.get(keyItem, 'value.0') ) {
-              return encodeURIComponent(key + ':') + encodeURIComponent(_.map( keyItem.value, function( val ) { return val; }).join('|'));
-            }
-            else if ( key ) { 
-              return encodeURIComponent(key); 
-            }
-          });
-          
-          queryObj[ sortType ] = _.isArray(queryKeysArray) ? queryKeysArray.join(', ') : null;
-          
-        }
-      }
-      else if ( this.listName === "scope" ) {
-        
-        queryObj[ this.listName ] = encodeURIComponent(this.$store.getters.scopeKeys);
-        
-      }
-      
+      let queryObj = {};
+
+      if      ( this.item.key  === "sortValues"   ) queryObj = this.queryForSortValues( value );
+      else if ( this.item.type === "sort"         ) queryObj = this.queryForSort( value );
+      else if ( this.item.type === "filter"       ) queryObj = this.queryForFilter();
+      else if ( this.item.type === "filterExtras" ) queryObj = this.queryForFilterExtras( value );
+      else if ( this.listName  === "scope"        ) queryObj = this.queryForScope();
+
       queryObj.book = null;
+      
+      // Changing the tags filter clears subtitle (that was given in special cases where a
+      // tag link was clicked in the categories page or book details).
+      if ( this.$route.query.tagTitle && this.item.key === 'tags' ) {
+        queryObj.tagTitle = null;
+        this.$store.commit('prop', { key: 'pageSubTitle', value: null });
+      }
       this.$store.commit('prop', { key: 'bookClicked', value: true });
       
       this.$updateQueries( queryObj, { src: 'saveOptions' });
-      
+
+    },
+
+    // "Show sort values" toggle: stored as its own query key, independent of the active sorter.
+    queryForSortValues: function( value ) {
+      return { sortValues: value };
+    },
+
+    queryForSort: function( value ) {
+      return {
+        sort: this.item.key,
+        sortDir: value ? "desc" : "asc",
+      };
+    },
+
+    // Plain filters (Not started / Started / Finished) are just a list of active keys.
+    // router.replace already encodes query values, so no manual encoding needed here.
+    queryForFilter: function() {
+      return { filter: this.$store.getters.filterKeys };
+    },
+
+    // Filter extras can carry a range or a multiselect value alongside the key, so they're
+    // serialized as JSON instead of the plain comma list plain filters use.
+    queryForFilterExtras: function( value ) {
+
+      // Series sub page persists inLibrary/notInLibrary across visits, on top of the URL.
+      if ( this.$route.name === 'series' && this.item.key.match(/inLibrary|notInLibrary/) ) {
+        this.$store.commit('prop', { key: 'sticky.seriesFilters.' + this.item.key, value: value });
+      }
+
+      // updateListRenderingOpts is committed to the store before saveOptions runs (see
+      // doTheThings), so every active key's range/value is already current here.
+      const filterExtrasKeys = this.$store.getters.filterExtrasKeys;
+      if ( !filterExtrasKeys ) return { filterExtras: null };
+
+      const activeExtras = _.map( filterExtrasKeys.split(','), ( key ) => this.serializeFilterExtra( key ) );
+      return { filterExtras: JSON.stringify( activeExtras ) };
+
+    },
+
+    // One active filterExtras key as { key, range } or { key, value }, whichever it uses.
+    serializeFilterExtra: function( key ) {
+      const keyItem = _.find( this.$store.state.listRenderingOpts.filter, { key: key });
+      if ( _.isArray( keyItem.range ) ) return { key: key, range: keyItem.range };
+      if ( _.get( keyItem, 'value.0' ) ) return { key: key, value: keyItem.value };
+      return { key: key };
+    },
+
+    // Active search scopes ('@title', '@authors', etc).
+    queryForScope: function() {
+      return { scope: this.$store.getters.scopeKeys };
     },
 
   },
@@ -583,9 +638,36 @@ export default {
   justify-items: stretch;
   justify-content: stretch;
   white-space: nowrap;
+  gap: 10px;
   div { flex: 1; }
-  span:first-child { padding-right: 10px; }
-  span:last-child { padding-left: 10px; }
+  > .min-number,
+  > .max-number {
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 13px;
+    min-width: 10px;
+    position: relative;
+    &:before {
+      content: '';
+      position: absolute;
+      top   : -10px;
+      bottom: -10px;
+    }
+  }
+  > .min-number {
+    cursor: w-resize;
+    &:before {
+      left : -14px;
+      right: -3px;
+    }
+  }
+  > .max-number {
+    cursor: e-resize;
+    &:before {
+      left : -3px;
+      right: -14px;
+    }
+  }
 }
 
 .sorter-button {
@@ -633,9 +715,11 @@ export default {
       }
       transition: all 120ms ease-in-out;
     }
+    // Inactive sorter: both arrows dimmed so the active sorter's full-strength arrows
+    // stand out. The .active rules below restore strength to the relevant direction.
     &.sortbox [data-icon] {
       @include themify($themes) {
-        color: rgba( themed(frontColor), 1);
+        color: rgba( themed(frontColor), .35);
       }
     }
     &.sortbox.active {
@@ -672,6 +756,31 @@ export default {
         height: 6px;
       }
     }
+    // Field icon replaces the outline square for scope items that carry one (see
+    // fieldIcon below), so the checkbox itself doubles as the field's glyph. Sized and
+    // positioned the same as [data-icon="square"] since it fills the same slot; the
+    // checkmark still overlays on top when checked.
+    &.checkbox.has-field-icon {
+      [data-icon="field"] {
+        position: absolute;
+        z-index: 1;
+        top: 0;
+        left: 0;
+        width: 14px;
+        height: 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 120ms ease-in-out;
+        @include themify($themes) {
+          color: rgba( themed(frontColor), .55);
+        }
+        svg {
+          width: 10px;
+          height: 10px;
+        }
+      }
+    }
   }
   input:checked + .radiobutton,
   input:checked + .checkbox,
@@ -699,6 +808,14 @@ export default {
       [data-icon="circle"]:last-child,
       [data-icon="check"] {
         opacity: 1;
+      }
+    }
+    &.checkbox.has-field-icon {
+      [data-icon="field"] {
+        opacity: 0;
+      }
+      [data-icon="check"] {
+        color: #65aa3a;
       }
     }
   }

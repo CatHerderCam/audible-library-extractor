@@ -17,7 +17,7 @@ export default {
       const base = this.$store.state.urlOrigin;
       
       let newUrl = "";
-      if ( array && !store.sticky.detailLinksToAudible ) {
+      if ( array && !store.sticky.detailLinksExternal ) {
         const inSubPage = _.get(this.$route, 'meta.subPage');
         const routeSubPage = this.$route.name === 'wishlist' ? 'wishlist' : 'library';
         const subPageSource = inSubPage ? this.$store.state.sticky.subPageSource : routeSubPage;
@@ -83,7 +83,8 @@ export default {
             newUrl = { 
               name: subPageSource, 
               query: { 
-                filterExtras: `tags:${input.name}`,
+                filterExtras: JSON.stringify([{ key: 'tags', value: [input.name] }]),
+                tagTitle: input.name,
                 refresh: true,
               } 
             };
@@ -147,7 +148,7 @@ export default {
       if (!newUrl) {
         return "";
       } 
-      else if ( array && !store.sticky.detailLinksToAudible ) {
+      else if ( array && !store.sticky.detailLinksExternal ) {
         return newUrl;
       }
       else {

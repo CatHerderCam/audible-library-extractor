@@ -4,6 +4,7 @@
   :href="url"
   target="_blank" rel="noopener noreferrer"
   :class="{ 'top-right': topRight, 'no-bg': noBG }"
+  @mousedown="$haptic(1)"
   >
     <div
       v-if="icon"
@@ -40,8 +41,8 @@ export default {
 
 .gr-icon.audible-cloudplayer-link {
   border-radius: 999999px;
-  $bgColor1: desaturate( complement(#ffc338), 16);
-  $bgColor2: darken($bgColor1, 10);
+  $bgColor1: color.adjust(color.complement(#ffc338), $saturation: -16%);
+  $bgColor2: color.adjust($bgColor1, $lightness: -10%);
   background: $bgColor1;
   background: -moz-linear-gradient(top, $bgColor1 0%, $bgColor2 100%);
   background: -webkit-linear-gradient(top, $bgColor1 0%, $bgColor2 100%);

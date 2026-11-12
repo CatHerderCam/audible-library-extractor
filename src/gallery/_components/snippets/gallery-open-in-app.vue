@@ -6,6 +6,7 @@
   class="audible-app-link"
   :class="{ 'muted': muted, 'placeholder': !book.asin }"
   :tabindex="muted ? 0 : -1"
+  @mousedown="$haptic(1)"
   >
     <div
       class="gr-icon"
@@ -104,7 +105,7 @@ export default {
   &.muted:active > div,
   &.muted:focus > div {
     @include themify($themes) {
-      background: darken( themed(audibleOrange), 5) !important;
+      background: color.adjust(themed(audibleOrange), $lightness: -5%) !important;
     }
   }
   

@@ -1,4 +1,8 @@
+import _ from 'lodash';
+import helpers from "@contscript-mixins/misc/content-script-helpers.js";
+
 var window = window ?? self;
+window._ = _;
 
 // await chrome.scripting.registerContentScripts([
 //   {
@@ -11,22 +15,53 @@ var window = window ?? self;
 // ]);
 
 var domainExtension = false;
-var activeIcons = [];
 var galleryUrl;
 
-chrome.storage.local.get(['extras']).then(data => {
-  galleryUrl = data?.extras?.galleryUrl;
-});
+const audibleLibraryUrlPattern = /^https?:\/\/[^/]*\.audible\.[a-z.]+\/library\//i;
 
-chrome.runtime.onMessage.addListener(function(msg, sender) {
-  if ( msg.pageAction == true && !chrome.runtime.lastError ) {
-    chrome.action.setIcon({
-      tabId: sender.tab.id,
-      path: 'assets/icons/16.png'
-    }).then(function() {
-      activeIcons.push( sender.tab.id );
-      // chrome.action.show( sender.tab.id );
+function isAudibleLibraryTab( url ) { return !!(url && audibleLibraryUrlPattern.test( url )); }
+
+function openAudibleLibraryTab( newTab ) {
+
+  const createTab = () => {
+    newTab.url = "https://audible"+ (domainExtension || '.com') +"/library/titles?ipRedirectOverride=true&overrideBaseCountry=true";
+    chrome.tabs.create(newTab);
+  };
+  
+  if ( !domainExtension ) {
+    chrome.storage.local.get(['metadata']).then(data => {
+      domainExtension = data?.metadata?.extras?.['domain-extension'];
+      createTab();
     });
+  }
+  else {
+    createTab();
+  }
+  
+}
+
+function openGalleryTab( newTab ) {
+  
+  newTab.url = galleryUrl || "./gallery.html";
+  chrome.tabs.create(newTab);
+  
+}
+
+chrome.storage.local.get(['audibledata', 'metadata']).then(data => {
+  galleryUrl = data?.metadata?.extras?.galleryUrl;
+  if ( !data.audibledata ) {
+    chrome.storage.local.get(null).then(allData => {
+      const migrated = helpers.methods.migrateStorageData( allData );
+      if ( migrated ) {
+        chrome.storage.local.set({ audibledata: allData.audibledata, metadata: allData.metadata });
+        if ( migrated.remove ) chrome.storage.local.remove( migrated.remove );
+        galleryUrl = allData?.metadata?.extras?.galleryUrl;
+      }
+      makeContextMenu();
+    });
+  }
+  else {
+    makeContextMenu();
   }
 });
 
@@ -56,13 +91,33 @@ chrome.action.onClicked.addListener(tabId => {
   // https://developer.chrome.com/extensions/tabs#method-query
   chrome.tabs.query({ active: true, currentWindow: true }).then(tabs => {
     var tab = tabs[0];
-    // Sends message to the content script...
-    // https://developer.chrome.com/apps/messaging#simple
-    // https://developer.chrome.com/extensions/tabs#method-sendMessage
-    chrome.tabs.sendMessage(tab.id, {
-      iconClicked: true,
-      tab: tab
-    });
+
+    if ( isAudibleLibraryTab( tab.url ) ) {
+      // Sends message to the content script...
+      // https://developer.chrome.com/apps/messaging#simple
+      // https://developer.chrome.com/extensions/tabs#method-sendMessage
+      chrome.tabs.sendMessage(tab.id, {
+        iconClicked: true,
+        tab: tab
+      });
+    }
+    else {
+      chrome.storage.local.get(['audibledata']).then(data => {
+        var audibledata = data.audibledata || {};
+        var newTab = {
+          active: true,
+          index: tab.index + 1,
+          openerTabId: tab.id
+        };
+        if ( audibledata.library || audibledata.wishlist ) {
+          openGalleryTab( newTab );
+        }
+        else {
+          openAudibleLibraryTab( newTab );
+        }
+      });
+    }
+
   });
 });
 
@@ -79,6 +134,15 @@ chrome.runtime.onMessage.addListener( async (message, sender) => {
       index: sender.tab.index + 1,
     });
     
+  }
+  else if (message.action === "openGallery") {
+
+    chrome.tabs.create({
+      url: galleryUrl || "./gallery.html",
+      active: true,
+      index: sender.tab.index + 1,
+    });
+
   }
   else if (message.action === "openOutput") {
     
@@ -120,38 +184,16 @@ chrome.runtime.onMessage.addListener( async (message, sender) => {
 });
 
 // CONTEXT MENU
-chrome.tabs.onActivated.addListener((activeInfo) => {
-  
-  if ( !chrome.runtime.lastError ) {
-    if ( activeIcons.indexOf(activeInfo.tabId) >-1 ) {
-      // chrome.action.show(tabId);
-    }
-    else {
-      chrome.action.setIcon({
-        tabId: activeInfo.tabId,
-        path: 'assets/icons-gray/16.png'
-      }).then(function() {
-        // chrome.action.show(activeInfo.tabId);
-      });
-    }
-    
-  }
-  
-});
-
-makeContextMenu();
-
 function makeContextMenu() {
   
   // https://developer.chrome.com/apps/storage
   // Permission: "storage"
-  chrome.storage.local.get(['chunks', 'extras']).then(data => {
-    
-    const dataChunks = data?.chunks || [];
-    const storageHasData = dataChunks.length > 0;
-    const libraryExists = dataChunks.lastIndexOf('books') > -1;
-    const wishlistExists = dataChunks.lastIndexOf('wishlist') > -1;
-    domainExtension = data?.extras?.['domain-extension'];
+  chrome.storage.local.get(['audibledata', 'metadata']).then(data => {
+
+    const audibledata = data.audibledata || {};
+    const libraryExists = !!audibledata.library;
+    const wishlistExists = !!audibledata.wishlist;
+    domainExtension = data?.metadata?.extras?.['domain-extension'];
     data = null;
     
     // https://developer.chrome.com/docs/extensions/reference/contextMenus/
@@ -223,21 +265,10 @@ function contextEvents( info, tab ) {
   };
   
   if ( info.menuItemId === 'ale-to-audible' ) {
-    if ( !domainExtension ) {
-      chrome.storage.local.get(['extras']).then(data => {
-        domainExtension = data?.extras?.['domain-extension'];
-        newTab.url = "https://audible"+ (domainExtension || '.com') +"/library/titles?ipRedirectOverride=true&overrideBaseCountry=true";
-        chrome.tabs.create(newTab);
-      });
-    }
-    else {
-      newTab.url = "https://audible"+ domainExtension +"/library/titles?ipRedirectOverride=true&overrideBaseCountry=true";
-      chrome.tabs.create(newTab);
-    }
+    openAudibleLibraryTab( newTab );
   }
   else if ( info.menuItemId === 'ale-to-gallery' ) {
-    newTab.url = galleryUrl || "./gallery.html";
-    chrome.tabs.create(newTab);
+    openGalleryTab( newTab );
   }
   else if ( info.menuItemId === 'ale-to-docs' ) {
     newTab.url = "https://joonaspaakko.gitbook.io/audible-library-extractor/";

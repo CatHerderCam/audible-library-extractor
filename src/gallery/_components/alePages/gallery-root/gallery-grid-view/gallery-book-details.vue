@@ -5,12 +5,13 @@
     v-if="book"
     v-shortkey.once="['esc']"
     @shortkey="closeBookDetails"
-    :class="{ 
-      'spreadsheet-details': sticky.viewMode === 'spreadsheet', 
+    :class="{
+      'spreadsheet-details': sticky.viewMode === 'spreadsheet',
       'mobile-width': mobileWidth,
-      'links-lead-to-library': !sticky.detailLinksToAudible && animate_detailLinksToAudible,
     }"
-  > 
+    @touchstart="touchStart"
+    @touchend="touchEnd"
+  >
     
     <div v-if="sticky.viewMode !== 'spreadsheet'" class="arrow" ref="arrow"></div>
     <div
@@ -31,24 +32,27 @@
       <!-- REGULAR BOOK (in library) -->
       <div v-else class="inner-wrap" :style="{ maxWidth: getMaxWidth }">
         
-        <div class="details-toolbar">
-          <div 
-            class="audible-vs-local-links" 
-            @click="detailLinksToAudible()"
-            v-tippy="{ trigger: 'manual' }"
-            :content="sticky.detailLinksToAudible ? 'Links lead to Audible' : 'Links lead to my library'"
-            ref="detailLinksToAudible"
+        <div class="details-toolbar" :class="{ 'reverse-direction': sticky.bookDetailSettings.reverseDirection }">
+          <div
+            class="audible-vs-local-links"
+            @click="toggleDetailLinksExternal()"
           >
-            <ion-library-sharp v-if="!sticky.detailLinksToAudible" />
-            <fa6-brands-audible v-else />
+            <mingcute:link-fill/>
+            <span class="label">{{ sticky.detailLinksExternal ? 'Audible' : 'Gallery' }} links</span>
           </div>
           <gallery-details-first-hider v-if="mobileWidth" />
-          <gallery-sidebar-flipper />
-          <uil-cog class="book-details-info" @click="$store.commit('prop', { key: 'bookDetailSettingsOpen', value: !store.bookDetailSettingsOpen })" :class="{ active: store.bookDetailSettingsOpen }" />
+          <gallery-sidebar-flipper @flip="flipPanels" />
+          <div class="book-details-info" @click="$store.commit('prop', { key: 'globalSettingsOpen', value: true })">
+            <mdi-cog-outline class="settings-icon" />
+            <span class="label">Settings</span>
+          </div>
         </div>
-        
-        <div class="top details-wrap" :class="{ 'reverse-direction': sticky.bookDetailSettings.reverseDirection }">
-          <div class="information" ref="information" v-if="sticky.bookDetailSettings.sidebar.show && !(!sticky.bookDetailSettings.reverseDirection && sticky.bookDetailSettings.hideFirstSection && mobileWidth)">
+
+        <div
+          class="top details-wrap"
+          :class="{ 'reverse-direction': sticky.bookDetailSettings.reverseDirection }"
+        >
+          <div class="information" ref="information" v-if="sticky.bookDetailSettings.sidebar.show && !(sticky.bookDetailSettings.reverseDirection && sticky.bookDetailSettings.hideFirstSection && mobileWidth)">
             
             <div class="collapse-btn" 
               v-if="!mobileWidth"
@@ -107,11 +111,11 @@
             <gallery-books-in-series :book="book" v-if="sticky.bookDetailSettings.sidebar.collectionsList" />
             
           </div> <!-- .information -->
-          <gallery-book-summary v-if="!loading && !(sticky.bookDetailSettings.reverseDirection && sticky.bookDetailSettings.hideFirstSection && mobileWidth)" :book="book" :bookSummary="bookSummaryJSON" :mobileWidth="mobileWidth"></gallery-book-summary>
+          <gallery-book-summary ref="summary" v-if="!loading && !(!sticky.bookDetailSettings.reverseDirection && sticky.bookDetailSettings.hideFirstSection && mobileWidth)" :book="book" :bookSummary="splitData.bookSummary" :mobileWidth="mobileWidth" :readmoreOpen="panelSummaryOpen" @update:readmoreOpen="panelSummaryOpen = $event"></gallery-book-summary>
         </div>
 
         <div class="carousel-wrap" v-if="sticky.bookDetailSettings.carousel && !loading">
-          <gallery-carousel v-if="(peopleAlsoBought && peopleAlsoBought !== true) && !(store.standalone && !store.siteOnline)" :detailsBook="book" :books="peopleAlsoBought" :key="maxWidth" :mobileWidth="mobileWidth">
+          <gallery-carousel v-if="(splitData.peopleAlsoBought && splitData.peopleAlsoBought !== true) && !(store.standalone && !store.siteOnline)" :detailsBook="book" :books="splitData.peopleAlsoBought" :key="maxWidth" :mobileWidth="mobileWidth">
             <!-- People who bought this also bought: -->
             <!-- Name changed: -->
             Listeners also enjoyed
@@ -138,6 +142,7 @@ import secondsToTimeString from "@output-mixins/gallery-secondsToTimeString.js";
 import progressbarWidth from "@output-mixins/gallery-progressbarWidth.js";
 import makeCoverUrl from "@output-mixins/gallery-makeCoverUrl.js";
 import makeUrl from "@output-mixins/gallery-makeFullUrl.js";
+import loadSplitBookData from "@output-mixins/gallery-load-split-book-data.js";
 
 export default {
   name: "bookDetails",
@@ -148,7 +153,8 @@ export default {
     secondsToTimeString,
     progressbarWidth,
     makeCoverUrl,
-    makeUrl
+    makeUrl,
+    loadSplitBookData,
   ],
   data: function() {
     return {
@@ -159,88 +165,63 @@ export default {
       maxWidth: "unset",
       loading: true,
       clickedBook: null,
-      peopleAlsoBoughtJSON: null,
-      bookSummaryJSON: null,
-      scrpt: null,
+      splitData: {
+         peopleAlsoBought: null,
+         bookSummary: null,
+      }, 
       imageLoaded: false,
-      clientX: 0,
-      clientY: 0,
-      firstClientX: 0,
-      firstClientY: 0,
-      animate_detailLinksToAudible: true,
+      touchStartPoint: null,
+      panelScroll: {
+        information: null,
+        summary: null,
+      },
+      // Kept here (rather than in gallery-book-summary's own data) because
+      // hideFirstSection unmounts/remounts that panel on every flip, which
+      // would otherwise reset "read more" back to closed each time.
+      panelSummaryOpen: false,
     };
-  },
-  
-  watch: {
-    // 'sticky.detailLinksToAudible'( value ) {
-    //   if ( !value ) {
-        
-    //     this.animate_detailLinksToAudible = true;
-    //     setTimeout(() => {
-    //       this.animate_detailLinksToAudible = false;
-    //     }, 3000);
-        
-    //   }
-    // },
   },
 
   created: function() {
-    
-    this.index = _.findIndex( this.$store.state.chunkCollection, { asin: this.asin });
-    this.book = this.$store.state.chunkCollection[this.index];
-    
+
+    // Index into the full sorted collection. The views are virtualized, so we
+    // can no longer rely on chunkCollection (only a window of it is in the DOM).
+    this.index = _.findIndex( this.$store.getters.collection, { asin: this.asin });
+    this.book = this.$store.getters.collection[this.index];
+
     this.loadJSON();
     
   },
   
   mounted: function() {
     this.$nextTick(function() {
-      
-      this.clickedBook = document.querySelector('.ale-book[data-asin="'+ this.book.asin +'"]') || document.querySelector('.ale-row[data-asin="'+ this.book.asin +'"]');
+
+      this.findClickedBook();
       this.resetScroll();
-      
+
       this.maxWidth = this.repositionBookDetails() + "px";
       this.$store.commit('prop', { key: 'timeStamp', value: new Date().getTime() });
       this.$compEmitter.on("afterWindowResize", this.onWindowResize);
       this.loading = false;
-      
+
       this.scrollToCarousel();
       this.scrollToMyBooksInTheSeries();
       
+      this.ensureArrowAimed();
+
     });
     
-    // window.addEventListener('touchstart', this.touchStart);
-    // window.addEventListener('touchmove', this.preventTouch, {passive: false});
-      
   },
 
   beforeUnmount: function() {
     
-    if ( this.scrpt ) {
-      this.scrpt.remove();
-      this.scrpt = null;
-    }
-    
     this.$compEmitter.off("afterWindowResize", this.onWindowResize);
-    this.peopleAlsoBoughtJSON = null;
-    this.bookSummaryJSON = null;
-    
+
     // this.closeBookDetails();
-    
-    this.$store.commit('prop', { key: 'bookDetailSettingsOpen', value: false });
-    
-    const bookDetailsEl = document.querySelector('#ale-bookdetails');
-    if ( bookDetailsEl ) bookDetailsEl.remove();
-    
-    // window.removeEventListener('touchstart', this.touchStart);
-    // window.removeEventListener('touchmove', this.preventTouch, {passive: false});
-      
+
   },
 
   computed: {
-    peopleAlsoBought: function () {
-      return this.book.peopleAlsoBought || this.peopleAlsoBoughtJSON;
-    },
     getMaxWidth: function() {
       if ( this.sticky.viewMode === 'spreadsheet' ) {
         return this.maxWidth;
@@ -265,38 +246,6 @@ export default {
       });
     },
     
-    loadJSON: function( afterError )  {
-      
-      if ( this.store.standalone ) {
-        let vue = this;
-        
-        let scrpt = document.createElement("script");
-        this.scrpt = scrpt;
-        scrpt.src = "data/split-book-data/"+ vue.book.asin +"."+ this.store.library.extras.cacheID +".js";
-        scrpt.type="text/javascript";
-        scrpt.onload = function() {
-          
-          vue.bookSummaryJSON = window.bookSummaryJSON;
-          window.bookSummaryJSON = true;
-          
-          vue.peopleAlsoBoughtJSON = window.peopleAlsoBoughtJSON;
-          window.peopleAlsoBoughtJSON = true;
-          scrpt = null;
-          
-        };
-        // Tries again if there's an error loading the files, but only once...
-        scrpt.onerror = function() {
-          scrpt = null;
-          setTimeout(function() {
-            if ( !afterError ) vue.loadJSON( 'afterError'); // Try twice...
-          }, 1000);
-        };
-        document.head.appendChild(scrpt);
-        
-      }
-
-    },
-    
     onWindowResize: function( msg ) {
       if ( msg.widthChanged ) { 
         this.maxWidth = this.repositionBookDetails() + "px";
@@ -313,14 +262,16 @@ export default {
     resetScroll: function() {
       this.$nextTick(function() {
         this.$nextTick(function() {
-          
-          if ( this.sticky.viewMode === 'grid' ) {
-            scroll({ top: this.clickedBook.offsetTop - this.store.topNavOffset - 25, behavior: 'auto' });
-          }
-          else {
-            document.querySelector('.list-view-inner-wrap').scroll({ top: this.clickedBook.offsetTop - 45 });
-          }
-          
+
+          // The clicked cover/row can be virtualized out momentarily; bail rather than throw.
+          if ( !this.clickedBook ) return;
+
+          // Spreadsheet: the list view already scrolls the open row into view via
+          // virtualizer.scrollToIndex when the book opens. Running another scroll here
+          // on every panel mount (which happens when the row scrolls back into the
+          // virtual window) causes a jarring jump.
+          if ( this.sticky.viewMode !== 'grid' ) return;
+
         });
       });
     },
@@ -329,19 +280,7 @@ export default {
       
       if ( !this.$route.query.carousel ) return;
       this.$updateQueries({ carousel: null });
-      
-      this.$nextTick(function() {
-      
-        const scrollPosition = parseFloat(this.$route.query.y);
-        if ( this.sticky.viewMode === 'grid' ) {
-          scroll({ top: scrollPosition });
-        }
-        else {
-          const listInnerWrap = document.querySelector('.list-view-inner-wrap');
-          listInnerWrap.scroll({ top: scrollPosition });
-        }
-        
-      });
+
     },
     
     scrollToMyBooksInTheSeries: function() {
@@ -371,57 +310,78 @@ export default {
       });
     },
 
-    repositionBookDetails: function() {
-      
-      const gridView = document.querySelector(".ale-books");
-      const domBooks = gridView.querySelector(".ale-book") ? gridView.querySelectorAll(".ale-book") : gridView.querySelector('table tbody').querySelectorAll(".ale-row");
-
-      const target = {};
-      
-      target.el = domBooks[this.index];
-      target.index = this.index;
-      target.width = target.el.getBoundingClientRect().width;
-      target.siblings = domBooks; // + target.el
-
-      const wrapper = {};
-      wrapper.el = gridView;
-      wrapper.width = wrapper.el.getBoundingClientRect().width;
-      const info = {};
-      info.cols = Math.floor(wrapper.width / target.width) || 1;
-      
-      if (info.cols < 2) {
-        info.rowEndEl = target.el;
-      } else {
-        info.currentRow = Math.floor(target.index / info.cols) + 1;
-        info.rowEnd = info.currentRow * info.cols;
-        // Rolls back if the last element is not at the end of the row
-        info.getRowEndEl = function(index) {
-          let el = target.siblings[index];
-          if (!el) {
-            el = info.getRowEndEl(--index);
-          }
-          return el;
-        };
-        info.rowEndEl = info.getRowEndEl(info.rowEnd - 1);
-      }
-      
-      let lastRowEndEl = document.querySelector('.target-row-end');
-      if ( lastRowEndEl ) lastRowEndEl.classList.remove('target-row-end');
-      info.rowEndEl.classList.add("target-row-end");
-      info.rowEndEl.parentNode.insertBefore(
-        this.$refs.bookDetails,
-        info.rowEndEl.nextSibling
-      );
-
-      if ( this.sticky.viewMode !== 'spreadsheet' ) this.repositionBookDetailsArrow(target.el);
-      
-      return (this.sticky.viewMode === 'spreadsheet') ? wrapper.width-60 : (target.width * info.cols);
+    findClickedBook: function() {
+      this.clickedBook = document.querySelector('.ale-book[data-asin="'+ this.book.asin +'"]') || document.querySelector('.ale-row[data-asin="'+ this.book.asin +'"]');
+      return this.clickedBook;
     },
 
+    // Grid only: re-aim the details arrow once the clicked cover is actually laid out.
+    // On a fresh reload the cover can mount a few frames after the panel, so poll
+    // briefly until it has a real width, then position the arrow.
+    ensureArrowAimed: function( attempt ) {
+      if ( this.sticky.viewMode === 'spreadsheet' ) return;
+      attempt = attempt || 0;
+
+      this.findClickedBook();
+      const ready = this.clickedBook && this.clickedBook.getBoundingClientRect().width > 0;
+
+      if ( ready ) {
+        this.repositionBookDetailsArrow( this.clickedBook );
+        return;
+      }
+
+      // Give up after ~10 frames so we never loop forever.
+      if ( attempt < 10 ) {
+        const vue = this;
+        requestAnimationFrame(function() { vue.ensureArrowAimed( attempt + 1 ); });
+      }
+    },
+
+    repositionBookDetails: function() {
+
+      // The panel is rendered in-flow by the view at the open row's reserved gap,
+      // so we no longer move it around the DOM. This only computes the inner-wrap
+      // max-width and re-aims the arrow at the clicked cover.
+
+      // Spreadsheet: panel spans the table width (minus padding).
+      if ( this.sticky.viewMode === 'spreadsheet' ) {
+        const tableEl = document.querySelector(".ale-books");
+        const tableWidth = tableEl ? tableEl.getBoundingClientRect().width : 0;
+        return tableWidth - 60;
+      }
+
+      const gridEl = document.querySelector(".ale-books.grid-view");
+      const target = this.clickedBook;
+
+      if ( target ) this.repositionBookDetailsArrow(target);
+
+      // List: the cards cap their width and the row centers within the full-width flex row,
+      // so the row element itself spans the container. Measure the actual cards instead, from
+      // the first card's left edge to the last card's right edge, so the panel matches them.
+      if ( gridEl && gridEl.classList.contains('details-list') ) {
+        const rowEl = target ? target.closest('.ale-grid-row') : gridEl.querySelector('.ale-grid-row');
+        const cards = rowEl ? rowEl.querySelectorAll('.ale-book') : [];
+        if ( !cards.length ) return 0;
+        const firstLeft = cards[ 0 ].getBoundingClientRect().left;
+        const lastRight = cards[ cards.length - 1 ].getBoundingClientRect().right;
+        return lastRight - firstLeft;
+      }
+
+      // Grid: panel inner-wrap spans the full row of covers (cols * cellWidth).
+      const wrapperWidth = gridEl ? gridEl.getBoundingClientRect().width : 0;
+      const cellWidth = target ? target.getBoundingClientRect().width : 0;
+      const cols = cellWidth ? ( Math.floor(wrapperWidth / cellWidth) || 1 ) : 1;
+
+      return cellWidth * cols;
+    },
+    
     repositionBookDetailsArrow: function(clickedEl) {
-      const leftOffset =
-        clickedEl.getBoundingClientRect().left + window.scrollX;
-      const targetCenter = leftOffset + clickedEl.offsetWidth / 2;
+      if ( !this.$refs.arrow ) return;
+
+      const parent = this.$refs.arrow.offsetParent || document.querySelector('.ale-books.grid-view');
+      const parentLeft = parent ? parent.getBoundingClientRect().left : 0;
+      const coverBox = clickedEl.getBoundingClientRect();
+      const targetCenter = ( coverBox.left - parentLeft ) + coverBox.width / 2;
 
       this.$refs.arrow.style.left = targetCenter + "px";
     },
@@ -465,42 +425,25 @@ export default {
     }, 70, { leading: false, trailing: true }),
     
     keyboardMove( direction ) {
-      
+
+      const collection = this.$store.getters.collection;
       const prev = direction === 'prev';
       const nextIndex = prev ? this.index-1 : this.index+1;
-      const nextBook = this.store.chunkCollection[ nextIndex ];
-      const condition = prev ? (nextIndex > -1) : (nextIndex < this.store.chunkCollection.length);
+      const nextBook = collection[ nextIndex ];
+      const condition = prev ? (nextIndex > -1) : (nextIndex < collection.length);
       if ( condition ) {
-        if ( !prev && (nextIndex > this.store.chunkCollection.length-2) ) {
-          this.$store.commit('chunkCollectionAdd');
-          this.$nextTick(function() {
-            this.$compEmitter.emit("book-clicked", nextBook.asin);
-          });
-        }
-        else {
-          this.$compEmitter.emit("book-clicked", nextBook.asin);
-        }
+        this.$compEmitter.emit("book-clicked", nextBook.asin);
       }
       
     },
     
     keyboardMove_inGrid_vertically( e ) {
-      
+
       const vue = this;
-      const wrapper = {};
-      wrapper.el = document.querySelector(".ale-books");
-      wrapper.width = wrapper.el.offsetWidth;
-      
-      const target = {};
-      target.el = this.clickedBook;
-      target.index = this.index;
-      target.width = target.el.offsetWidth;
-      
-      const cols = Math.floor(wrapper.width / target.width);
-      // const currentRow = Math.floor(this.index / cols) + 1;
-      // const currentRowLast = (currentRow*cols)-1;
-      // const previousRowLast = ((currentRow-1)*cols)-1;
-      
+      const cols = this.$store.state.gridCols || 1;
+
+      const collection = vue.$store.getters.collection;
+
       const getVerticalIndex = function() {
         
         const direction = e.srcKey;
@@ -511,7 +454,7 @@ export default {
         }
         else {
           index = vue.index + cols;
-          const booksLength = vue.store.chunkCollection.length-1;
+          const booksLength = collection.length-1;
           if ( index > booksLength ) index = booksLength;
         }
         return index;
@@ -521,22 +464,14 @@ export default {
       // this.closeBookDetails();
       
       const nextIndex = getVerticalIndex();
-      const nextBook = vue.store.chunkCollection[ nextIndex ];
-      const lastIndex = this.store.chunkCollection.length-1;
-      const condition = e.srcKey === 'up' ? 
-                        !(vue.index === 0 && nextIndex == 0) : 
+      const nextBook = collection[ nextIndex ];
+      const lastIndex = collection.length-1;
+      const condition = e.srcKey === 'up' ?
+                        !(vue.index === 0 && nextIndex == 0) :
                         !(vue.index === lastIndex && nextIndex === lastIndex);
       
       if ( condition ) {
-        if ( e.srcKey === 'down' && (nextIndex > vue.store.chunkCollection.length-2) ) {
-          this.$store.commit('chunkCollectionAdd');
-          this.$nextTick(function() {
-            this.$compEmitter.emit("book-clicked", nextBook.asin);
-          });
-        }
-        else {
-          this.$compEmitter.emit("book-clicked", nextBook.asin);
-        }
+        this.$compEmitter.emit("book-clicked", nextBook.asin);
       }
       
     },
@@ -588,58 +523,154 @@ export default {
           );
         }
       } else {
-        return '<div class="stretch-center" style="flex: 1;"><strong>Length:</strong> ' + (book.length || 'unkown') + "</div>";
+        return '<div class="stretch-center" style="flex: 1;"><strong>Length:</strong> ' + (book.length || 'unknown') + "</div>";
       }
     },
     
-    swipeHandler( direction ) {
-      
-      if ( !this.mobileWidth ) return;
-      
-      this.$store.commit('prop', { 
-        key: 'sticky.bookDetailSettings.reverseDirection', 
-        value: !this.$store.state.sticky.bookDetailSettings.reverseDirection 
+    // Scroll preservation only matters when hideFirstSection is on: that's
+    // the only mode where flipping actually swaps which panel is in the DOM
+    // (v-if, "Show one"). With it off, both panels stay visible side by side
+    // (or stacked) and flipping is a pure CSS reorder, so scroll is left
+    // alone. When it's on, remembers which panel is first before flipping,
+    // saves the current scroll position under that panel's key, then
+    // restores it (or, on the first-ever flip to that side, maps how far
+    // you'd scrolled through the outgoing panel proportionally onto the
+    // incoming one, clamped to its tail end) for whichever panel becomes
+    // first. If book details has scrolled fully out of view, snaps back to
+    // its top instead, since there's nothing on screen worth preserving.
+    flipPanels() {
+
+      const adjustsScroll = this.mobileWidth && this.sticky.bookDetailSettings.hideFirstSection;
+
+      // hideFirstSection unmounts the outgoing panel once reverseDirection
+      // flips, so its scroll range has to be read now, before that happens,
+      // or mapScrollProgress would have nothing left to read it from.
+      let currentFirstPanel = null;
+      let currentPanelRange = null;
+
+      if ( adjustsScroll ) {
+        currentFirstPanel = this.sticky.bookDetailSettings.reverseDirection ? 'summary' : 'information';
+        this.panelScroll[ currentFirstPanel ] = window.scrollY;
+        const currentPanelEl = this.getPanelEl( currentFirstPanel );
+        if ( currentPanelEl ) currentPanelRange = this.panelScrollRange( currentPanelEl );
+      }
+
+      this.$store.commit('prop', {
+        key: 'sticky.bookDetailSettings.reverseDirection',
+        value: !this.sticky.bookDetailSettings.reverseDirection
       });
-      
+
+      if ( !adjustsScroll ) return;
+
+      this.$nextTick(() => {
+
+        if ( !this.isBookDetailsInViewport() ) {
+          this.scrollToBookDetailsTop();
+          return;
+        }
+
+        const nextFirstPanel = this.sticky.bookDetailSettings.reverseDirection ? 'summary' : 'information';
+        const savedY = this.panelScroll[ nextFirstPanel ];
+
+        const targetY = savedY !== null ? savedY : this.mapScrollProgress( nextFirstPanel, currentPanelRange );
+
+        window.scrollTo(0, this.clampToPanelTail( nextFirstPanel, targetY ));
+
+      });
+
     },
-    
+
+    scrollToBookDetailsTop() {
+      if ( this.$refs.bookDetails ) this.$refs.bookDetails.scrollIntoView({ block: 'start' });
+    },
+
+    isBookDetailsInViewport() {
+      if ( !this.$refs.bookDetails ) return false;
+      const rect = this.$refs.bookDetails.getBoundingClientRect();
+      return rect.bottom > 0 && rect.top < window.innerHeight;
+    },
+
+    getPanelEl( panelKey ) {
+      return panelKey === 'summary' ? _.get(this.$refs, 'summary.$el') : this.$refs.information;
+    },
+
+    // How far scrollY can travel while panelEl's bottom is still reaching down
+    // past the top of the viewport. This is the panel's own scrollable range.
+    panelScrollRange( panelEl ) {
+      const panelBottom = panelEl.getBoundingClientRect().bottom + window.scrollY;
+      return Math.max(0, panelBottom - window.innerHeight);
+    },
+
+    // First flip to a side this session (no remembered position yet): scales
+    // how far through the outgoing panel's own content you'd scrolled onto
+    // the incoming panel's range, rather than carrying over the raw scrollY,
+    // so a much shorter/taller panel doesn't just inherit an arbitrary pixel
+    // offset. fromRange is captured by the caller before the flip, since
+    // hideFirstSection may have already unmounted the outgoing panel by now.
+    mapScrollProgress( toPanelKey, fromRange ) {
+
+      const toEl = this.getPanelEl( toPanelKey );
+      if ( !toEl || !fromRange ) return window.scrollY;
+
+      const progress = _.clamp(window.scrollY / fromRange, 0, 1);
+      const toRange = this.panelScrollRange( toEl );
+
+      return progress * toRange;
+
+    },
+
+    // Keeps a scroll target from overshooting past the bottom of the panel
+    // that's about to become first (say the sidebar was scrolled way past
+    // where a shorter summary ends), landing a bit above its tail end instead
+    // so the end of the content is still visible on screen.
+    clampToPanelTail( panelKey, targetY ) {
+
+      const panelEl = this.getPanelEl( panelKey );
+      if ( !panelEl ) return targetY;
+
+      const tailOffset = 100;
+      const maxY = this.panelScrollRange( panelEl ) + tailOffset;
+
+      return Math.min(targetY, maxY);
+
+    },
+
     touchStart(e) {
-      
+
       if ( !this.mobileWidth ) return;
-      
-      this.firstClientX = e.touches[0].clientX;
-      this.firstClientY = e.touches[0].clientY;
-      
+
+      // The carousel has its own horizontal drag/swipe handling (Splide), so
+      // a swipe starting there shouldn't also flip the panels.
+      if ( e.target.closest('.lazyboy') ) return;
+
+      this.touchStartPoint = {
+        x: e.changedTouches[0].clientX,
+        y: e.changedTouches[0].clientY,
+        time: Date.now(),
+      };
+
     },
 
-    preventTouch(e) {
-    
-      if ( !this.mobileWidth ) return;
-    
-      const minValue = 5; // threshold
+    // Passive, post-hoc swipe classifier. Only looks at where a touch started
+    // and where it ended, never at touchmove, so it can never call
+    // preventDefault and can never fight native vertical scrolling mid-gesture
+    // (unlike the vue3-touch-events directive this replaces, see 060708a2).
+    touchEnd(e) {
 
-      this.clientX = e.touches[0].clientX - this.firstClientX;
-      this.clientY = e.touches[0].clientY - this.firstClientY;
+      if ( !this.mobileWidth || !this.touchStartPoint ) return;
 
-      // Vertical scrolling does not work when you start swiping horizontally.
-      if( Math.abs(this.clientX) > minValue ){ 
-        e.preventDefault();
-        e.returnValue = false;
-        return false;
-      }
+      const deltaX = e.changedTouches[0].clientX - this.touchStartPoint.x;
+      const deltaY = e.changedTouches[0].clientY - this.touchStartPoint.y;
+      const elapsed = Date.now() - this.touchStartPoint.time;
+      this.touchStartPoint = null;
+
+      const isHorizontalSwipe = Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 2;
+      if ( isHorizontalSwipe && elapsed < 600 ) this.flipPanels();
+
     },
-    
-    detailLinksToAudible() {
-      
-      this.$store.commit('prop', { key: 'sticky.detailLinksToAudible', value: !this.sticky.detailLinksToAudible })
-      
-      const el = _.get( this.$refs, 'detailLinksToAudible' );
-      el._tippy.show();
-      
-      setTimeout(() => {
-        el._tippy.hide();
-      }, 2000);
-      
+
+    toggleDetailLinksExternal() {
+      this.$store.commit('prop', { key: 'sticky.detailLinksExternal', value: !this.sticky.detailLinksExternal })
     },
   }
 };
@@ -651,25 +682,107 @@ export default {
   @extend .no-selection;
   position: absolute;
   z-index: 2;
-  top: -30px;
-  right: 0px;
+  top: -44px;
+  right: auto;
+  left: 0px;
   display: flex;
   flex-direction: row;
-  gap: 30px;
-}
-
-.audible-vs-local-links, 
-.book-details-info {
-  font-size: 18px;
-  cursor: pointer;
-  transition: color 200ms cubic-bezier(0, 0, 0, .1);
-  @include themify($themes) {
-    color: rgba(themed(frontColor), 0.4);
-    &.active,
-    &:hover {
-      color: themed(frontColor);
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-radius: 99999px;
+  #ale-bookdetails:not(.mobile-width) &.reverse-direction {
+    left: auto;
+    right: 0px;
+  }
+  .mobile-width & {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    @media (max-width: 440px) {
+      right: 0px;
+      left: auto;
+      transform: none;
     }
   }
+  > * {
+    position: relative;
+    &:not(:last-child):after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      right: 0px;
+      transform: translateY(-50%);
+      width: 1px;
+      height: 16px;
+      @include themify($themes) {
+        background: rgba(themed(frontColor), 0.15);
+      }
+    }
+  }
+}
+
+#ale-bookdetails:not(.mobile-width) .details-toolbar {
+  max-width: 280px;
+  left: 140px;
+  transform: translateX(-50%);
+  &.reverse-direction {
+    left: auto;
+    right: 140px;
+    transform: translateX(50%);
+  }
+}
+
+.theme-dark .details-toolbar {
+  background: color.adjust($darkBackColor, $lightness: 6%);
+  box-shadow: inset 0 3px 10px rgba($darkBackColor, .8);
+  @media (max-width: 440px) {
+    box-shadow: none;
+  }
+}
+.theme-light .details-toolbar {
+  background: color.adjust($lightBackColor, $lightness: -1%);
+  box-shadow: inset 0 3px 10px rgba( color.adjust($lightBackColor, $lightness: -30%), 0.4);
+  @media (max-width: 440px) {
+    box-shadow: none;
+  }
+}
+
+.audible-vs-local-links,
+.book-details-info,
+.action-reverse-direction,
+.details-first-hider,
+:deep(.action-reverse-direction),
+:deep(.details-first-hider) {
+  &, * {
+    line-height: 1;
+    font-size: 1em;
+  }
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 99999px;
+  transition: color 200ms cubic-bezier(0, 0, 0, .1), background-color 200ms cubic-bezier(0, 0, 0, .1);
+  .settings-icon {
+    font-size: 1.2em;
+  }
+  @include themify($themes) {
+    color: rgba(themed(frontColor), 0.7);
+  }
+
+  .label {
+    font-size: 11px;
+    white-space: nowrap;
+    @media (max-width: 440px) {
+      display: none;
+    }
+  }
+}
+
+.book-details-info .label {
+  display: none;
 }
 
 #ale-bookdetails {
@@ -690,8 +803,9 @@ export default {
   box-sizing: border-box;
   // font-size: 14px;
   padding: 40px 35px;
-  margin-top: 12px;
-  margin-bottom: 35px;
+  padding-top: 50px;
+  margin-top: 0;
+  margin-bottom: 0;
   position: relative;
   left: 50%;
   right: 50%;
@@ -768,9 +882,9 @@ export default {
   .information {
     @include themify($themes) {
       // border: 1px solid rgba( themed(frontColor), .1);
-      $bgColor: lighten(themed(backColor), 7.5);
-      background: mix(blue, $bgColor, 2%);
-      box-shadow: 0 3px 15px rgba(darken(themed(backColor), 30), 0.8);
+      $bgColor: color.adjust(themed(backColor), $lightness: 7.5%);
+      background: color.mix(blue, $bgColor, 2%);
+      box-shadow: 0 3px 15px rgba(color.adjust(themed(backColor), $lightness: -30%), 0.8);
     }
     position: relative;
     border-radius: 3px;
@@ -824,7 +938,7 @@ export default {
         bottom: 0;
         left: 0;
         @include themify($themes) {
-          background: rgba(darken(themed(backColor), 1), 0.65);
+          background: rgba(color.adjust(themed(backColor), $lightness: -1%), 0.65);
         }
         .progress {
           height: 5px;
@@ -1027,38 +1141,5 @@ export default {
   width: 100%;
 }
 
-.links-lead-to-library {
-  :deep(.book-tags),
-  :deep(.basic-info),
-  :deep(.categories) {
-    a {
-      @include themify($themes) {
-        color: complement(themed(audibleOrange)) !important;
-        // &:before {
-        //   content: '\02022';
-        //   padding: 0 .1em 0 0;
-        //   color: complement(themed(audibleOrange)) !important;
-        //   font-size: 1.9em;
-        //   line-height: 0px;
-        //   position: relative;
-        //   top: .2em;
-        // }
-      }
-    }
-    a:visited {
-      @include themify($themes) {
-        color: complement(darken(desaturate(themed(audibleOrange), 5), 15)) !important;
-        // &:before {
-        //   color: complement(darken(desaturate(themed(audibleOrange), 5), 15)) !important;
-        // }
-      }
-    }
-    a:hover {
-      @include themify($themes) {
-        // color: themed(frontColor) !important;
-      }
-    }
-  }
-}
 
 </style>

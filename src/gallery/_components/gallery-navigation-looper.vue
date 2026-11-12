@@ -23,20 +23,45 @@
           !route.condition() : null)
         ) ? 'disabled' : '',
         route.highlight ? 'highlight' : 'null',
+        (mobileMenuOpen && route.meta.subpageMenuSource) ? 'has-subpage-menu' : null,
+        subpageMenuParent(route),
       ]"
       v-tippy="{ placement: 'left', flipBehavior: ['left', 'top', 'bottom'], maxWidth: 400 }"
       :content="typeof route.tippy === 'function' ? route.tippy() : route.tippy"
       @click="route.click ? route.click( route ) : null"
+      @mousedown="$haptic(1)"
+      @mouseenter="route.meta.groupName === 'extension-tools' ? positionMegaMenu($event) : null"
     >
         
-      <div class="menu-item-inner" @click="additionalClick(route)">
-        <span class="menu-item-icon" v-if="route.meta.icon">
-          <i :class="route.meta.icon"></i>
-        </span>
+      <div class="menu-item-inner" @click="additionalClick(route)" @mousedown="$haptic(1)">
+        <span class="menu-item-icon" v-if="route.meta.icon" v-html="route.meta.icon"></span>
         <span class="menu-item-text" v-html="getRouteName(route)"></span>
+        <!-- Its own tap target, so the row itself still opens the collection -->
+        <span
+          v-if="mobileMenuOpen && route.meta.subpageMenuSource"
+          class="subpage-menu-chevron"
+          :class="{ expanded: expandedSources[ route.meta.subpageMenuSource ] }"
+          @click.stop.prevent="toggleSubpageMenu(route)"
+          @mousedown.stop.prevent="$haptic(1)"
+        >
+          <fa6-solid-chevron-right />
+        </span>
       </div>
-      
-      <div class="sub-menu" v-if="route.childItems">
+
+      <gallery-subpage-menu-accordion
+        v-if="mobileMenuOpen && route.meta.subpageMenuSource"
+        :source="route.meta.subpageMenuSource"
+        :expanded="expandedSources[ route.meta.subpageMenuSource ]"
+        @navigate="$emit('update:mobileMenuOpen', false)"
+      />
+
+      <gallery-extension-tools-menu
+        v-if="route.childItems && route.meta.groupName === 'extension-tools'"
+        :items="route.childItems"
+        :position="megaMenuPosition"
+        @itemClick="closeMenu"
+      />
+      <div class="sub-menu" v-else-if="route.childItems">
         <menuLooper :routes="route.childItems" :childRoutes="route.childItems" @closeMenu="closeMenu" />
       </div>
       
@@ -45,23 +70,34 @@
     <!-- This is rendered only on the first level -->
     <div v-if="inRoot" class="menu-icon-toolbar">
       
+      <!-- Moved to global settings -->
+      <!--
       <div>
         <gallery-light-switch />
       </div>
+      -->
       <div v-if="!mobileMenuOpen">
         <gallery-search-button />
       </div>
+      <!-- Moved to global settings -->
+      <!--
       <div v-if="mobileMenuOpen">
         <gallery-view-mode-switcher :justIcon="true" v-if="$store.state.searchMounted" />
       </div>
+      -->
       <div v-if="mobileMenuOpen">
         <fa6-solid-link
         class="icon" 
         @click="copyToClipboard()"
+        @mousedown="$haptic(2)"
         v-tippy="{ trigger: 'manual' }"
         content="Page URL copied to clipboard!"
         ref="copyToClipboard"
         />
+      </div>
+      <div class="settings-btn icon" @click="openSettings" @mousedown="$haptic(1)">
+        <mdi-cog-outline class="settings-icon" />
+        <span class="settings-btn-text" v-if="!mobileMenuOpen">Settings</span>
       </div>
       
     </div>
@@ -75,18 +111,74 @@
 </template>
 
 <script>
+
+import { currentSubpageMenuSource } from '@output-mixins/gallery-subpage-menu-destinations.js';
+
 export default {
   name: "menuLooper",
-  props: [ 'routes', 'childRoutes', 'mobileMenuOpen', 'inRoot', 'desktopMenu' ],
+  props: [ 'routes', 'childRoutes', 'mobileMenuOpen', 'inRoot', 'desktopMenu', 'subpageMenuSource' ],
+  emits: [ 'update:mobileMenuOpen', 'closeMenu' ],
   data: function() {
     return {
       menuOpen: true,
       copiedToClipboard: false,
+      expandedSources: {},
+      megaMenuPosition: { top: 0, left: 0 },
     };
+  },
+
+  watch: {
+    // Expanding the section you're already in shows where you are, and on library or
+    // wishlist it doubles as the hint that these pages have sub pages at all.
+    mobileMenuOpen: {
+      immediate: true,
+      handler: function( open ) {
+
+        if ( !open ) return;
+
+        const source = currentSubpageMenuSource( this.$route, this.$store.state.sticky.subPageSource );
+        this.expandedSources = source ? { [ source ]: true } : {};
+
+      },
+    },
   },
   
   methods: {
-    
+
+    // Only one section stays open, so the menu doesn't grow past comfortable thumb reach.
+    toggleSubpageMenu: function( route ) {
+
+      const source = route.meta.subpageMenuSource;
+      this.expandedSources = this.expandedSources[ source ] ? {} : { [ source ]: true };
+
+    },
+
+    // Marks whichever of library/wishlist owns the sub page you're looking at, so the two
+    // nav rows read as one unit.
+    subpageMenuParent: function( route ) {
+
+      const source = _.get( route, 'meta.subpageMenuSource' );
+
+      return ( source && source === this.subpageMenuSource ) ? 'subpage-menu-parent' : null;
+
+    },
+
+    openSettings: function() {
+      if ( this.mobileMenuOpen ) this.$emit('update:mobileMenuOpen', false);
+      this.$store.commit('prop', { key: 'globalSettingsOpen', value: true });
+    },
+
+    // Anchors the extension tools mega menu under the top menu row (not the subpage
+    // bar below it), centered on the button that opens it.
+    positionMegaMenu( event ) {
+
+      const buttonRect = event.currentTarget.getBoundingClientRect();
+      const rowRect = this.$el.getBoundingClientRect();
+
+      this.megaMenuPosition = { top: rowRect.bottom, left: buttonRect.left + ( buttonRect.width / 2 ) };
+
+    },
+
     getHrefAttr( route ) {
       return route.tag === 'a' ? 'href' : 'to';
     },
@@ -202,17 +294,35 @@ export default {
         font-weight: 600;
       }
       border-left: 2px solid themed(audibleOrange);
-      background: darken(themed(elementColor), 3);
+      background: color.adjust(themed(elementColor), $lightness: -3%);
     }
   }
-  
+
+}
+.menu-items:not(.mobileMenu) .menu-item:not(.extension-tools) {
+  margin: 0 3px;
+  @include themify($themes) {
+    background: themed(elementColor);
+  }
+  &.router-link-active {
+    @include themify($themes) {
+      background: color.adjust(themed(elementColor), $lightness: 4%);
+    }
+  }
+}
+
+.menu-items:not(.mobileMenu) .menu-item.extension-tools {
+  margin-left: 9px;
+}
+.menu-items:not(.mobileMenu) .menu-item.extension-tools + .menu-icon-toolbar {
+  margin-left: 9px;
+  &:before {
+    display: none;
+  }
 }
 
 .menu-item-inner {
   padding: 10px 12px;
-  @media ( max-width: 670px ) {
-    padding: 10px 8px;
-  }
 }
 
 .mobileMenu .menu-item-inner {
@@ -240,6 +350,12 @@ export default {
 
 // .router-link-exact-active 
 .router-link-active > .menu-item-inner > .menu-item-icon {
+  @include themify($themes) {
+    color: themed(audibleOrange);
+  }
+}
+
+.menu-items:not(.mobileMenu) .menu-item.subpage-menu-parent > .menu-item-inner > .menu-item-icon {
   @include themify($themes) {
     color: themed(audibleOrange);
   }
@@ -287,45 +403,63 @@ export default {
 }
 
 .extension-tools {
-  margin-left: 10px;
-  padding: 6px 0;
-  @media ( max-width: 750px ) {
-    .menu-item-text {
-      display: none;
-    }
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  @include themify($themes) {
+    background: color.adjust(themed(elementColor), $lightness: -4%);
+    border: 1px solid rgba( themed(frontColor), .2);
+    box-shadow: 0 2px 6px rgba( themed(outerColor), .5);
   }
 }
 
 .extension-tools > .menu-item-inner {
-  padding:  2px 9px;
-  border-radius: 99999px !important;
-  > span {
-    padding: 0 !important;
-    font-size: .85em;
-  }
+  padding: 4px 10px;
   @include themify($themes) {
-    // color: themed(audibleOrange);
-    border: 2px solid themed(audibleOrange);
-    background: rgba(themed(audibleOrange), .1);
     color: themed(front_color);
   }
 }
 
-.extension-tools > .sub-menu .menu-item:active {
-  @include themify($themes) {
-    background: themed(audibleOrange);
-  }
+.extension-tools .menu-item-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.extension-tools :deep(.extension-mega-menu) {
+  display: none;
+}
+.extension-tools:hover :deep(.extension-mega-menu),
+.extension-tools:focus :deep(.extension-mega-menu) {
+  display: block;
+}
+.extension-tools:hover :deep(.mega-menu-inner),
+.extension-tools:focus :deep(.mega-menu-inner) {
+  -webkit-animation: swing-in-top-fwd 300ms cubic-bezier(.175, .885, .32, 1.275) both;
+          animation: swing-in-top-fwd 300ms cubic-bezier(.175, .885, .32, 1.275) both;
 }
 
 .menu-icon-toolbar {
+  position: relative;
   display: inline-flex;
   flex-direction: row;
   justify-content: center;
   align-items: center;
   margin: 5px 0;
   border-radius: 9999px;
-  margin-left: 10px;
+  margin-left: 18px;
   padding: 0 4px;
+
+  &:before {
+    content: '';
+    position: absolute;
+    top: 20%;
+    bottom: 20%;
+    left: -10px;
+    width: 1px;
+    @include themify($themes) {
+      background: rgba( themed(frontColor), .15);
+    }
+  }
   :deep(> div),
   :deep(> div > div),
   :deep(> div > div > div) {
@@ -337,14 +471,21 @@ export default {
     padding: 5px 8px;
     cursor: pointer;
   }
+  :deep(.settings-btn) {
+    display: inline-flex;
+    align-items: center;
+  }
+  :deep(.settings-icon) {
+    font-size: 1.2em !important;
+  }
+  :deep(.settings-btn-text) {
+    padding-left: 8px;
+  }
   // &,
   // > div {
   //   padding: 2px 5px;
   //   cursor: pointer;
   // }
-  @include themify($themes) {
-    border: 1px solid rgba( themed(frontColor), .1);
-  }
 }
 
 
@@ -375,7 +516,7 @@ export default {
   
   .menu-icon-toolbar { 
     margin-left: 0; 
-    padding: 15px 0;
+    padding: 47px 0 75px;
     border: none;
     border-radius: 0;
     position: relative;
@@ -416,10 +557,41 @@ export default {
       border-top: 1px solid rgba( themed(frontColor), .1);
     }
   }
-  .menu-item:focus .menu-item-text,
-  .menu-item:hover .menu-item-text {
+  .menu-item:not(.has-subpage-menu):focus > .menu-item-inner .menu-item-text,
+  .menu-item:not(.has-subpage-menu):hover > .menu-item-inner .menu-item-text {
     @include themify($themes) {
       color: themed(audibleOrange);
+    }
+  }
+
+  .menu-item.subpage-menu-parent > .menu-item-inner > .menu-item-text {
+    @include themify($themes) {
+      color: themed(audibleOrange);
+    }
+  }
+
+  .menu-item.has-subpage-menu {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .subpage-menu-chevron {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    margin-left: auto;
+    padding: 0 20px;
+    align-self: stretch;
+    cursor: pointer;
+    svg {
+      transition: transform 150ms ease;
+      font-size: .7em !important;
+    }
+    &.expanded svg {
+      transform: rotate(90deg);
+    }
+    @include themify($themes) {
+      color: rgba( themed(frontColor), .5);
     }
   }
   

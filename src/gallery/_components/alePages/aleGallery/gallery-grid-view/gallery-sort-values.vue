@@ -1,27 +1,33 @@
 <template>
   <div class="sort-values-container">
     
-    <div class="ratings" v-if="($store.getters.sortBy === 'myRating' || $store.getters.sortBy === 'rating' || $store.getters.sortBy === 'ratings') && sortContents() !== '&nbsp;'"
-    v-tippy="{ trigger: 'click mouseenter', allowHTML: true }"
-    :content="
-      ($store.getters.sortBy !== 'myRating' && book.myRating ? ('My rating: ' + book.myRating + '<br>') : '') + 
-      ($store.getters.sortBy === 'myRating' && book.rating ? ('Average rating: ' + book.rating + '<br>') : '') + 
-      ($store.getters.sortBy === 'myRating' && book.ratings ? ('Number of ratings: ' + book.ratings + '<br>') : '') + 
-      ''
-    "
-    >
-      <gallery-star-ratings :prioritizeRatingsText="$store.getters.sortBy === 'ratings'" :size="10" :rating="sortContents()" :number="true" :ratingsText="false" :ratings="($store.getters.sortBy === 'rating' || $store.getters.sortBy === 'ratings') && book.ratings ? book.ratings : null"></gallery-star-ratings>
-    </div>
-    <div 
-      v-else-if="$store.getters.sortBy !== 'favorite'" :class="'sort-'+$store.getters.sortBy" v-html="sortContents()"
+    <!-- One value row per key: the locked override (when it differs) on top, the active
+         sort value below it so it still reads as the sort legend. -->
+    <template v-for="key in valueKeys" :key="key">
+
+      <div class="ratings" :class="{ locked: key === lockedKey }" v-if="(key === 'myRating' || key === 'rating' || key === 'ratings') && sortContent[key] !== '&nbsp;'"
       v-tippy="{ trigger: 'click mouseenter', allowHTML: true }"
-      :content=" ($store.getters.sortBy === 'progress' ? book.progress : '' ) + ''"
-    ></div>
-    <div v-else :class="'sort-'+$store.getters.sortBy">
-      <fa6-solid-heart v-if="book.favorite" />
-      <span v-else>&nbsp;</span>
-    </div>
-    
+      :content="
+        (key !== 'myRating' && book.myRating ? ('My rating: ' + book.myRating + '<br>') : '') +
+        (key === 'myRating' && book.rating ? ('Average rating: ' + book.rating + '<br>') : '') +
+        (key === 'myRating' && book.ratings ? ('Number of ratings: ' + book.ratings + '<br>') : '') +
+        ''
+      "
+      >
+        <gallery-star-ratings :prioritizeRatingsText="key === 'ratings'" :size="10" :rating="sortContent[key]" :number="true" :ratingsText="false" :ratings="(key === 'rating' || key === 'ratings') && book.ratings ? book.ratings : null"></gallery-star-ratings>
+      </div>
+      <div
+        v-else-if="key !== 'favorite'" :class="['sort-'+key, { locked: key === lockedKey }]" v-html="sortContent[key]"
+        v-tippy="{ trigger: 'click mouseenter', allowHTML: true }"
+        :content=" (key === 'progress' ? book.progress : '' ) + ''"
+      ></div>
+      <div v-else :class="['sort-'+key, { locked: key === lockedKey }]">
+        <fa6-solid-heart v-if="book.favorite" />
+        <span v-else>&nbsp;</span>
+      </div>
+
+    </template>
+
   </div>
 </template>
 
@@ -41,11 +47,40 @@ export default {
     };
   },
   
+  computed: {
+
+    // The active sort key, and the optional locked override shown above it. The locked
+    // value is only its own row when it actually differs from the sort, so a matching
+    // pick (or no extra value) just shows the single sort value as before.
+    sortKey: function() {
+      return this.$store.getters.sortBy;
+    },
+    lockedKey: function() {
+      const locked = this.$store.getters.sortValuesKey;
+      return ( locked && locked !== this.sortKey ) ? locked : null;
+    },
+
+    // The value rows to render, locked on top. The sort value always renders; the legend
+    // for "which way is it sorted" stays intact.
+    valueKeys: function() {
+      return _.compact([ this.lockedKey, this.sortKey ]);
+    },
+
+    // Precomputed per rendered key so virtual scrolling doesn't re-run this lodash/regex/
+    // time work on every template reference (each key is read three times in the markup).
+    sortContent: function() {
+      return _.reduce( this.valueKeys, ( map, key ) => {
+        map[ key ] = this.sortValueFor( key );
+        return map;
+      }, {});
+    },
+
+  },
+
   methods: {
-    
-    sortContents: function() {
-      let sortKey = this.$store.getters.sortBy;
-      
+
+    sortValueFor: function( sortKey ) {
+
       switch( sortKey ) {
         
         case "bookNumbers":
@@ -99,6 +134,14 @@ export default {
         case "tags.name":
           var name = _.get( this.book, sortKey.replace('.name', '[0].name') );
           return name || this.notAvailable;
+          break;
+        case "added":
+          if ( this.book.purchaseDate ) {
+            return this.book.added + ' <small>(' + this.book.purchaseDate + ')</small>';
+          }
+          else {
+            return this.book.added;
+          }
           break;
         case "rating":
           if ( this.book.ratings ) {
@@ -184,10 +227,10 @@ export default {
         default:
           if ( this.book[sortKey] ) return this.book[sortKey]
           else return this.notAvailable;
-      
+
       }
     },
-    
+
     progress: function(book) {
       
       if (book.progress && book.length) {
@@ -240,12 +283,12 @@ export default {
     margin-left: 1px;
     margin-right: 1px;
     margin-bottom: -4px;
-    padding: 3px 6px;
-    padding-bottom: (3px+3px);
-    font-size: .9em;
+    padding: clamp(1px, calc(var(--cover-size, 180px) * 0.022), 5px) clamp(4px, calc(var(--cover-size, 180px) * 0.05), 10px);
+    font-size: clamp(9px, calc(var(--cover-size, 180px) * 0.075), 13px);
+    line-height: 1.4;
     font-weight: 700;
     border-radius: 2px 2px 0 0;
-    border: 1px solid red;
+    border: 1px solid transparent;
     box-sizing: border-box;
     color: #fff;
     @include themify($themes) {
@@ -264,13 +307,88 @@ export default {
 
 .theme-dark .ale-book .sort-values-container > div {
   color: #fff;
-  background: lighten( $darkBackColor, 9);
-  border-color: lighten( $darkBackColor, 14);
+  background: color.adjust($darkBackColor, $lightness: 9%);
+  border-color: color.adjust($darkBackColor, $lightness: 14%);
 }
 .theme-light .ale-book .sort-values-container > div {
-  color: #fff;
-  background: #202020;
-  border-color: lighten( #202020, 5);
+  color: rgba($lightFrontColor, .85);
+  background: #fff;
+  border-color: rgba($lightFrontColor, .18);
+}
+
+// In details-list mode the sort value strip sits at the top of a card, so it should
+// blend into the card rather than contrast with it. Transparent background, card's own
+// text color (muted), and a hairline bottom border as the only visual division.
+.details-list .ale-book .sort-values-container > div {
+  background: transparent;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  border-radius: 0;
+  margin-left: 0;
+  margin-right: 0;
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+}
+.theme-light .details-list .ale-book .sort-values-container > div {
+  background: #fff;
+  color: rgba($lightFrontColor, .75);
+  border-bottom-color: rgba($lightFrontColor, .12);
+}
+.theme-dark .details-list .ale-book .sort-values-container > div {
+  background: #171717;
+  color: rgba($darkFrontColor, .55);
+  border-bottom-color: rgba($darkFrontColor, .1);
+}
+.details-list .ale-book .sort-values-container > div.locked {
+  margin-bottom: 0;
+  padding-bottom: 3px;
+  border-bottom: none;
+  opacity: 1;
+}
+.theme-light .details-list .ale-book .sort-values-container > div.locked {
+  background: #fff;
+  color: rgba($lightFrontColor, .5);
+}
+.theme-dark .details-list .ale-book .sort-values-container > div.locked {
+  background: #171717;
+  color: rgba($darkFrontColor, .4);
+}
+// The sort value below a locked row gets the separator instead.
+.details-list .ale-book .sort-values-container > div.locked + div {
+  border-radius: 0;
+  border-bottom: 1px solid;
+  padding-bottom: 5px;
+  margin-bottom: 6px;
+}
+.theme-light .details-list .ale-book .sort-values-container > div.locked + div {
+  border-bottom-color: rgba($lightFrontColor, .12);
+}
+.theme-dark .details-list .ale-book .sort-values-container > div.locked + div {
+  border-bottom-color: rgba($darkFrontColor, .1);
+}
+
+// The locked override sits on top of the sort value. It's muted and squared at the
+// bottom so the two read as one connected stack, with the sort value as the anchor.
+.ale-book .sort-values-container > div.locked {
+  margin-bottom: 0;
+  border-bottom: none;
+  border-radius: 2px 2px 0 0;
+  padding: clamp(1px, calc(var(--cover-size, 180px) * 0.011), 3px) clamp(4px, calc(var(--cover-size, 180px) * 0.05), 10px);
+  font-size: clamp(8px, calc(var(--cover-size, 180px) * 0.055), 12px);
+  line-height: 1.4;
+  font-weight: 600;
+  opacity: .8;
+}
+.theme-dark .ale-book .sort-values-container > div.locked {
+  background: color.adjust($darkBackColor, $lightness: 5%);
+}
+.theme-light .ale-book .sort-values-container > div.locked {
+  background: #f2f2f2;
+}
+// With a locked row above it, the sort value squares off its top so they butt together.
+.ale-book .sort-values-container > div.locked + div {
+  border-radius: 0;
 }
 
 .ale-book.details-open .sort-values-container > div {
@@ -302,12 +420,12 @@ export default {
   color: #fff;
   background: #c30d2d;
   box-shadow: -1px 1px 2px rgba( #000, .25 );
-  // border: 1px solid darken( #c30d2d, 10);
+  // border: 1px solid color.adjust(#c30d2d, $lightness: -10%);
   // border-radius: 0 3px 0 3px;
   border-radius: 3px;
   // @include themify($themes) {
   //   background: themed(audibleOrange);
-  //   border: 1px solid darken( themed(audibleOrange), 20);
+  //   border: 1px solid color.adjust(themed(audibleOrange), $lightness: -20%);
   // }
 }
 
@@ -315,14 +433,14 @@ export default {
   height: 2px;
   border-radius: 2px;
   @include themify($themes) {
-    // background: darken(themed(audibleOrange), 15);
-    border: 1px solid rgba( darken(themed(audibleOrange), 15), .5 );
+    // background: color.adjust(themed(audibleOrange), $lightness: -15%);
+    border: 1px solid rgba( color.adjust(themed(audibleOrange), $lightness: -15%), .5 );
   }
   div {
     height: 100%;
     border-radius: 2px;
     @include themify($themes) {
-      background: lighten(saturate(themed(audibleOrange), 5), 5);
+      background: color.adjust(color.adjust(themed(audibleOrange), $saturation: 5%), $lightness: 5%);
     }
   }
 }

@@ -9,8 +9,8 @@
         <span v-else>{{ delim || ", " }}</span>
       </span>
       <span>
-        <component :is="routerOrLink(label.toLowerCase()).tag" v-bind:[routerOrLink(label.toLowerCase()).attr]="makeUrl(label.toLowerCase(), item, (!$store.state.sticky.detailLinksToAudible ? array : null))" :target="$store.state.sticky.detailLinksToAudible ? '_blank' : null" rel="noopener noreferrer">
-          {{ item.name }}<span v-if="item.bookNumbers" class="book-number"> (book {{ stringifyBookNumbers(item.bookNumbers) }})</span>
+        <component :is="routerOrLink(label.toLowerCase()).tag" v-bind:[routerOrLink(label.toLowerCase()).attr]="makeUrl(label.toLowerCase(), item, (!$store.state.sticky.detailLinksExternal ? array : null))" :target="$store.state.sticky.detailLinksExternal ? '_blank' : null" rel="noopener noreferrer">
+          {{ item.name }}<span v-if="item.bookNumbers" class="book-number"> (book {{ stringifyBookNumbers(item.bookNumbers) }})</span><fa6-solid-arrow-up-right-from-square class="external-link-icon" v-if="routerOrLink(label.toLowerCase()).tag === 'a'" />
         </component>
       </span>
     </span>
@@ -47,7 +47,7 @@ export default {
       return _.isArray(numbers) ? _.join(numbers, ',') : numbers;
     },
     routerOrLink( label ) {
-      if ( !this.$store.state.sticky.detailLinksToAudible && !(label === 'store' || label === 'book') ) {
+      if ( !this.$store.state.sticky.detailLinksExternal && !(label === 'store' || label === 'book') ) {
         return {
           tag: "router-link",
           attr: 'to',
@@ -86,6 +86,14 @@ export default {
 .book-number {
   @include themify($themes) { color: rgba(themed(frontColor), .9); };
   white-space: nowrap;
+}
+
+.external-link-icon {
+  padding-left: 4px;
+  font-size: .6em;
+  @include themify($themes) {
+    color: rgba(themed(frontColor), 0.4);
+  }
 }
 
 </style>

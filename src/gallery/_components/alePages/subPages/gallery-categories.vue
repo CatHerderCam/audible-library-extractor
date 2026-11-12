@@ -3,7 +3,7 @@
     
     <gallery-page-title></gallery-page-title>
     
-    <gallery-library-wishlist-switcher />
+    <!-- <gallery-library-wishlist-switcher /> -->
     
     <div
     class="single-box"
@@ -39,7 +39,9 @@
       <gallery-categories-page-tags v-if="parent.books" :parent="parent" :books="parent.books" :subPageSource="subPageSource" :parentCategoryIndex="parentCategoryIndex" />
 
     </div> <!-- .single-box -->
-    
+
+    <gallery-segment-rail target="window" :fixed="true" :total="categories ? categories.length : 0" />
+
   </div>
 </template>
 
@@ -69,9 +71,9 @@ export default {
       categories.parent = [];
       _.each( vue.subPageSource.collection, function(book, index) {
         
-        if ( book.categories ) {
-          // Parent categories...
-          const parentCategory = _.get( book, 'categories[0].name');
+        // Parent categories...
+        const parentCategory = _.get( book, 'categories[0].name');
+        if ( parentCategory ) {
           // If parent category object doesn't exist, make it
           let parentObj = _.find(categories.parent, ["name", parentCategory]);
           if (!parentObj) {
@@ -128,7 +130,7 @@ export default {
 
 <style lang="scss" scoped>
 
-@import "@gallery/box-layout.scss";
+@use "@gallery/box-layout.scss" as *;
 
 .box-layout-wrapper .single-box .sample-covers img { 
   width: 100%; 

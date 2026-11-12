@@ -1,13 +1,16 @@
 <template>
-  <div 
-    :class="{ 'mobile-threshold': $store.state.windowWidth < 630 }" 
-    :data-version="$store.state.version" 
+  <div
+    :class="{ 'mobile-threshold': $store.getters.mobileThreshold }"
+    :data-version="$store.state.version"
     :data-prevent-scrolling="$store.state.preventScrolling"
-    :style="{ paddingTop: $store.state.desktopPlayerHeight }"
+    :style="{
+      paddingTop: $store.state.desktopPlayerHeight,
+    }"
   >
     
     <gallery-background v-if="$store.state.showBackground && !($store.state.standalone && !$store.state.siteOnline)"></gallery-background>
     <gallery-navigation></gallery-navigation>
+    <gallery-global-settings v-if="$store.state.globalSettingsOpen" />
     
     <div v-if="$route.name !== '404' && $store.state.showRoute">
       <router-view :key="$route.name+'-'+$store.state.routeParams+'-'+$store.state.refreshViewTimeStamp"></router-view>
@@ -42,17 +45,20 @@ export default {
   
   created: function() {
     
-    if ( !this.$store.state.sticky.lightSwitchSetByUser ) {
-      const html = document.querySelector('html');
-      html.classList.remove("theme-dark");
-      html.classList.add("theme-light");
-    }
-    
+    // LOAD-TIME THEME INIT
+    // moved here from the (now hidden) gallery-light-switch component, which used to
+    // apply the theme class on load. The light/dark toggle lives in global settings now.
+    this.autoLightsOff();
+    const html = document.querySelector('html');
+    html.classList.remove("theme-light");
+    html.classList.remove("theme-dark");
+    html.classList.add( !this.$store.state.sticky.lightSwitch ? "theme-dark" : "theme-light" );
+
     let vue = this;
     
-    // var isbn = _.filter(this.$store.state.library.books, 'isbns');
+    // var isbn = _.filter(this.$store.state.audibledata.books, 'isbns');
     // console.log( 'books with ISBN:', isbn.length, isbn );
-    // console.log( _.filter( this.$store.state.library.books, ['asin', 'B08BX58B3N'] ) )
+    // console.log( _.filter( this.$store.state.audibledata.books, ['asin', 'B08BX58B3N'] ) )
     if ( this.checkIf_iOS() ) {
       document.querySelector('body').classList.add('is-ios');
     }
@@ -79,7 +85,17 @@ export default {
   },
 
   methods: {
-    
+
+    autoLightsOff: function() {
+      if (
+        window.matchMedia("(prefers-color-scheme)").media !== "not all" &&
+        this.$store.state.sticky.lightSwitch &&
+        !this.$store.state.sticky.lightSwitchSetByUser
+      ) {
+        this.$store.commit("stickyProp", { key: "lightSwitch", value: 0 });
+      }
+    },
+
     checkIf_iOS: function() {
       return [
         'iPad',
@@ -146,7 +162,7 @@ export default {
         
       }
       
-    }, 320, { leading: true, trailing: true }),
+    }, 320, { leading: false, trailing: true }),
     
   },
 
@@ -241,8 +257,8 @@ body {
 
 #audible-library-extractor {
   box-sizing: border-box;
-  padding-top: 80px;
-  &.mobile-threshold { padding-top: 45px; };
+  // --subpage-menu-height is set on this element from gallery-navigation.vue
+  padding-top: calc( 80px + var(--subpage-menu-height, 0px) );
   
   a {
     text-decoration: none;
@@ -254,7 +270,7 @@ body {
   a:visited {
     // @include themify($themes) { color: rgba( themed(frontColor), .7); }
     @include themify($themes) {
-      color: darken(desaturate(themed(audibleOrange), 5), 25);
+      color: color.adjust(color.adjust(themed(audibleOrange), $saturation: -5%), $lightness: -25%);
     }
   }
   a:hover {
@@ -304,7 +320,7 @@ body {
   z-index: 9999999999999999;
 }
 .tippy-content { 
-  padding: 3px !important; 
+  padding: 5px 8px !important; 
   font-size: 13px !important;
   line-height: 19px !important;
   text-align: left !important;
@@ -314,14 +330,14 @@ body {
 }
 
 .tippy-box {
-  border-radius: 11px !important;
-  padding: 7px !important;
+  border-radius: 4px !important;
+  padding: 0px !important;
 }
 
 .theme-dark {
   .tippy-box {
-    background: lighten($darkBackColor, 15) !important;
-    border: 2px solid lighten($darkBackColor, 34) !important;
+    background: color.adjust($darkBackColor, $lightness: 15%) !important;
+    border: 1px solid color.adjust($darkBackColor, $lightness: 34%) !important;
     box-shadow: 2px 2px 10px rgba(#000, 0.95) !important;
     .tippy-content {
       color: $darkFrontColor !important;
@@ -333,24 +349,24 @@ body {
   }
   
   .tippy-arrow {
-    color: lighten($darkBackColor, 34) !important;
+    color: color.adjust($darkBackColor, $lightness: 34%) !important;
   }
 
   .tippy-box {
     &[data-placement^="top"] .tippy-arrow {
-      border-top-color: lighten($darkBackColor, 34) !important;
+      border-top-color: color.adjust($darkBackColor, $lightness: 34%) !important;
       bottom: -1px !important;
     }
     &[data-placement^="right"] .tippy-arrow {
-      border-right-color: lighten($darkBackColor, 34) !important;
+      border-right-color: color.adjust($darkBackColor, $lightness: 34%) !important;
       left: -1px !important;
     }
     &[data-placement^="bottom"] .tippy-arrow {
-      border-bottom-color: lighten($darkBackColor, 34) !important;
+      border-bottom-color: color.adjust($darkBackColor, $lightness: 34%) !important;
       top: -1px !important;
     }
     &[data-placement^="left"] .tippy-arrow {
-      border-left-color: lighten($darkBackColor, 34) !important;
+      border-left-color: color.adjust($darkBackColor, $lightness: 34%) !important;
       right: -1px !important;
     }
   }
@@ -359,8 +375,8 @@ body {
 .theme-light {
   .tippy-box {
     background: #fff !important;
-    border: 2px solid darken($lightBackColor, 10) !important;
-    box-shadow: 2px 2px 10px rgba(#000, 0.55), 0px 0px 25px rgba(#000, 0.35) !important;
+    border: 1px solid color.adjust($lightBackColor, $lightness: -35%) !important;
+    box-shadow: 2px 2px 10px rgba(#000, 0.05), 0px 0px 25px rgba(#000, 0.05) !important;
     .tippy-content {
       color: $lightFrontColor !important;
       a {
@@ -371,24 +387,24 @@ body {
   }
   
   .tippy-arrow {
-    color: $lightBackColor !important;
+    color: color.adjust($lightBackColor, $lightness: -35%) !important;
   }
   
   .tippy-box {
     &[data-placement^="top"] .tippy-arrow {
-      border-top-color: $lightBackColor !important;
+      border-top-color: color.adjust($lightBackColor, $lightness: -35%) !important;
       bottom: -1px !important;
     }
     &[data-placement^="right"] .tippy-arrow {
-      border-right-color: $lightBackColor !important;
+      border-right-color: color.adjust($lightBackColor, $lightness: -35%) !important;
       left: -1px !important;
     }
     &[data-placement^="bottom"] .tippy-arrow {
-      border-bottom-color: $lightBackColor !important;
+      border-bottom-color: color.adjust($lightBackColor, $lightness: -35%) !important;
       top: -1px !important;
     }
     &[data-placement^="left"] .tippy-arrow {
-      border-left-color: $lightBackColor !important;
+      border-left-color: color.adjust($lightBackColor, $lightness: -35%) !important;
       right: -1px !important;
     }
   }

@@ -6,7 +6,6 @@ export default createStore({
   state: {
     appVersion: import.meta.env.PACKAGE_VERSION,
     localStorageName: 'ale-content-script-settings',
-    canceledRequests: [],
     progress: {
       text: null,
       textSuffix: null,
@@ -26,11 +25,12 @@ export default createStore({
       max: 0
     },
     storageHasData: {
-      books: null,
+      library: null,
       isbn: null,
       wishlist: null,
       collections: null,
       userReviews: null,
+      purchaseHistory: null,
     },
     toastOpts: {
       position: 'top',
@@ -38,38 +38,37 @@ export default createStore({
     },
     storageConfig: {},
     dataVersion: null,
+    newBooksCountLibrary: 0,
+    newBooksCountWishlist: 0,
     extractBtnDisabled: false,
     extractionButtonDisabled: false,
-    axiosRateLimit: { 
-      maxRequests: 10, 
-      perMilliseconds: 1000,
+    axiosRateLimit: {
+      maxRequests: 1,
+      perMilliseconds: 100,
+      concurrency: 10,
     },
     failedRequests: [],
     lastFailedRequestStatus: null,
-    taking_a_break: false,
     noWishlistAccess: false,
     checkingWishlistAccess: false,
     sticky: {
-      openOnLoad: false,
       extractSettings: [
         {
           label: "Library",
-          name: "books",
+          name: "library",
           value: true,
-          disabled: true,
           type: "is-success",
-          tippy: "Library is required in order to extract collections and isbn.",
-          trashTippy: 'This will also remove Collections and ISBN data.',
+          tippy: "Your full library of books: titles, authors, narrators, series, and other details.",
+          trashTippy: 'This will also remove Collections, My Reviews, Purchase History, and ISBN data.',
           kind: 'main',
-          deleteChunks: ['books', 'series', 'collections'],
+          deleteChunks: ['library', 'series', 'collections'],
           partialData: true,
         },
         {
           label: "Collections",
           name: "collections",
-          parent: 'books',
+          parent: 'library',
           value: true,
-          disabled: false,
           type: "is-success",
           tippy: "Very quick extraction that just needs to check the first page of each collection to find out the title and description",
           kind: 'main',
@@ -78,19 +77,27 @@ export default createStore({
         {
           label: "My Reviews",
           name: "userReviews",
-          // parent: 'books',
-          value: false,
-          disabled: false,
+          parent: 'library',
+          value: true,
           type: "is-success",
-          tippy: "",
+          tippy: "Your written reviews for books in your library.",
+          kind: 'main',
+          partialData: false,
+        },
+        {
+          label: "Purchase History",
+          name: "purchaseHistory",
+          parent: 'library',
+          value: true,
+          type: "is-success",
+          tippy: "Adds purchase date to library. A bit slow if you have pages and pages worth of purchases.",
           kind: 'main',
           partialData: false,
         },
         {
           label: "Wishlist",
           name: "wishlist",
-          value: false,
-          disabled: false,
+          value: true,
           type: "is-success",
           tippy: "Similar to library extraction but series order is not fetched. Books that also exist in your library are dropped off as long as you also extract library data.",
           kind: 'main',
@@ -100,13 +107,16 @@ export default createStore({
         {
           label: "ISBN",
           name: "isbn",
-          parent: 'books',
+          parent: 'library',
           value: false,
-          disabled: false,
           type: "is-danger",
-          tippy: "International Standard Book Numbers (ISBN) are required if you want to try importing your library to Goodreads. ISBNs are fetched for library books only. Very slow extraction time.",
+          tippy: "International Standard Book Numbers (ISBN) can be used with Goodreads import but not necessary. ASINs work just fine these days. Very slow extraction time.",
           kind: 'main',
           partialData: true,
+          // Slow and a niche need (Goodreads import) - checking its parent ("Library")
+          // shouldn't silently opt people into it. Still gets unchecked if Library is
+          // unchecked (its data depends on Library's), and still checkable on its own.
+          excludeFromParentCascade: true,
         },
         {
           name: "saveStandaloneAfter",
@@ -134,9 +144,8 @@ export default createStore({
         lsState = JSON.parse( lsState );
         
         const settings = _.map( lsState.extractSettings, function(o) {
-          return { 
-            disabled: o.disabled,
-            value   : o.value,
+          return {
+            value: o.value,
           };
         });
         
@@ -186,10 +195,6 @@ export default createStore({
       
     },
     
-    pushToCanceledRequests: function( state, value ) {
-      state.canceledRequests.push( value );
-    },
-    
     updateSetting: function( state, o ) {
       
       o = _.castArray(o);
@@ -221,29 +226,12 @@ export default createStore({
     },
     
     mainDataExists: function( state ) {
-      return state.storageHasData.books || state.storageHasData.wishlist;
+      return state.storageHasData.library || state.storageHasData.wishlist;
     },
     
     
     setting: ( state ) => ( settingName ) => {
       return _.find(state.sticky.extractSettings, { name: settingName });
-    },
-    
-    partialDataSettings( state, getters ) {
-      
-      const partalData_Settings = _.filter( getters.settings_mainSteps, { partialData: true });
-      const keys = _.map( partalData_Settings, 'name');
-      
-      
-      // hasData.books || hasData.wishlist || hasData.isbn
-      // console.log( keys );
-      
-      const mainStepsData = _.map( keys, ( settingKey ) =>  {
-        return _.get( state.storageHasData, settingKey );
-      });
-      
-      return _.every( mainStepsData, true );
-      
     },
     
     partialDataSettings( state, getters ) {

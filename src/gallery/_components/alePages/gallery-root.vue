@@ -1,8 +1,6 @@
 <template>
   <div id="ale-gallery">
     
-    <gallery-book-details-settings v-if="$store.state.bookDetailSettingsOpen" />
-    
     <!-- <ale-breadcrumbs :library="library" :general="general"></ale-breadcrumbs> -->
     
     <context-menu-reminder v-if="!$store.state.standalone && $store.state.sticky.contextMenuReminder" />
@@ -19,9 +17,9 @@
     
     <div v-if="!loading && $store.getters.collection && $store.getters.collection.length > 0">
       <div :style="galleryStyle">
-        <gallery-grid-view @vue:mounted="gridViewMounted" @vue:beforeUnmount="viewsbeforeUnmount" v-if="$store.state.sticky.viewMode === 'grid'" />
-        <gallery-list-view @vue:mounted="listViewMounted" @vue:beforeUnmount="viewsbeforeUnmount" v-else-if="$store.state.sticky.viewMode === 'spreadsheet'" />
-        <gallery-book-details v-if="mountedChildren && $route.query.book" :key="$route.query.book" :asin="$route.query.book" />
+        <gallery-grid-view v-if="$store.state.sticky.viewMode === 'grid'" />
+        <gallery-list-view v-else-if="$store.state.sticky.viewMode === 'spreadsheet'" />
+        <!-- Both views are virtualized and render book details in-flow themselves. -->
       </div>
     </div>
     <div v-else-if="errorMessage" id="nothing-here-404">
@@ -67,15 +65,13 @@ export default {
   data: function() {
     return {
       loading: true,
-      collectionSource: 'library.books',
+      collectionSource: 'audibledata.library',
       pageTitle: null,
       pageSubTitle: null,
-      scrollContainer: null,
       collapseView: null,
       realLength: 0,
       prepsCompleted: false,
       errorMessage: false,
-      mountedChildren: false,
     };
   },
   
@@ -108,6 +104,11 @@ export default {
   created: function() {
     
     this.updateListRenderingOptions();
+    
+    // Tag links carry the clicked tag's name as a subtitle. Subpages (categories, series, etc.)
+    // handle their own title/subtitle, so this only applies on the plain library/wishlist view.
+    const onLibraryOrWishlist = this.$route.name === 'library' || this.$route.name === 'wishlist';
+    if ( onLibraryOrWishlist && this.$route.query.tagTitle ) this.$store.commit('prop', { key: 'pageSubTitle', value: this.$route.query.tagTitle });
     
     // Setup for other pages that use the gallery page to show titles
     this.prepCategoriesSubPage();    
@@ -144,18 +145,6 @@ export default {
   },
   
   watch: {
-    '$store.getters.collection': function() {
-      
-      this.$store.commit("chunkCollectionReset");
-      
-      // if ( this.pageLoadBook && this.$route.name === 'series' ) {
-      //   this.$store.commit("prop", { key: 'chunkCollection', value: this.$store.getters.collection });
-      // }
-      // else {
-        this.$store.commit("chunkCollectionAdd");
-      // }
-      
-    },
     '$route.query.book': function( bookParam ) {
       
       // This is mostly in place because I didn't make certain things work in a reactive way
@@ -172,138 +161,12 @@ export default {
   
   methods: {
     
-    childrenMounted: function() {
-      
-      this.$nextTick(function() {
-        
-        let scrollPosition = this.$route.query.y ? parseFloat(this.$route.query.y) : 0;
-        if ( this.$route.query.scrolltop ) scrollPosition = 0;
-        
-        // Book query: open book details on load
-        if ( this.$route.query.book ) {
-          
-          let wrapper = document.querySelector(".ale-books");
-          let wrapperOffset = wrapper.offsetTop;
-          let grid = this.$store.state.sticky.viewMode === 'grid';
-          let bookHeight = grid ? wrapper.querySelector('.ale-book').getBoundingClientRect().height : wrapper.querySelector('table tbody .ale-row').getBoundingClientRect().height;
-          let wrapperMax = grid ? wrapper.getBoundingClientRect().width : wrapper.getBoundingClientRect().height;
-          let cols = Math.floor(wrapperMax / bookHeight) || 1;
-          
-          // this.$store.commit("chunkCollectionAdd", { chunkDistance: this.$store.state.chunkDistance * factor });
-          
-          let bookIndex = _.findIndex(this.$store.getters.collection, { asin: this.$route.query.book });
-          let max = Math.ceil( (bookIndex+1) / cols );
-          let currentRow = Math.floor(bookIndex / cols) + 1;
-          let rowEnd = currentRow * cols;
-          this.$store.commit("chunkCollectionAdd", { chunkDistance: rowEnd + this.$store.state.chunkDistance });
-          // ID: 3Ez82Egn (related to tn664iGW)
-          // Makes it so just the book with book details open with open on page load
-          // this.realLength = this.$store.getters.collection.length;
-          // if ( this.collapseView && ( this.realLength === 1 ) ) this.collapseView = false;
-          // if ( this.collapseView ) {
-            //   this.$store.commit("prop", { key: 'mutatingCollection', value: [book] });
-          // }
-          
-          // this.$nextTick(function() {
-          //   this.$compEmitter.emit("book-clicked", { book: this.$store.state.chunkCollection[bookIndex], index: bookIndex, force: true });
-          // });
-          
-          this.$nextTick(function() {
-            this.mountedChildren = true;
-          });
-          
-        }
-        else if ( scrollPosition || this.$route.query.scrolltop ) {
-          
-          this.$updateQueries({ scrolltop: null });
-
-          let wrapper = document.querySelector(".ale-books");
-          let wrapperOffset = wrapper.offsetTop;
-          let grid = this.$store.state.sticky.viewMode === 'grid';
-          let bookHeight = grid ? wrapper.querySelector('.ale-book').getBoundingClientRect().height : wrapper.querySelector('table tbody .ale-row').getBoundingClientRect().height;
-          let visibleArea = scrollPosition + window.innerHeight - wrapperOffset;
-          let maxItems = Math.ceil(visibleArea / bookHeight) || 1;
-          let wrapperMax = grid ? wrapper.getBoundingClientRect().width : wrapper.getBoundingClientRect().height;
-          let cols = Math.floor(wrapperMax / bookHeight) || 1;
-          let visibleBooks = grid ? maxItems*cols : cols;
-          let factor = Math.ceil(visibleBooks / this.$store.state.chunkDistance) || 1;
-          if ( factor > 1 ) this.$store.commit("chunkCollectionAdd", { chunkDistance: this.$store.state.chunkDistance * factor });
-          
-          this.$nextTick(function() {
-            if (this.$store.state.sticky.viewMode === 'grid') {
-              scroll({
-                top: scrollPosition
-              });
-            } else {
-              document.querySelector('.list-view-inner-wrap').scroll({
-                top: scrollPosition
-              });
-            }
-            
-            this.$nextTick(function() {
-              this.mountedChildren = true;
-            });
-            
-          });
-          
-        }
-        else {
-          this.$nextTick(function() {
-            this.mountedChildren = true;
-          });
-        }
-        
-      });
-    },
     
     expandView: function() {
       
       // this.$updateQueries({ book: null }, { history: true });
       
     },
-    
-    gridViewMounted: function() {
-      
-      this.scrollContainer = window;
-      this.scrollContainer.removeEventListener('scroll', this.addDomItems);
-      this.scrollContainer.addEventListener('scroll', this.addDomItems, { passive: true });
-      
-      this.childrenMounted();
-      
-    },
-    listViewMounted: function() {
-      
-      this.scrollContainer = document.querySelector('.list-view-inner-wrap');
-      this.scrollContainer.removeEventListener('scroll', this.addDomItems);
-      this.scrollContainer.addEventListener('scroll', this.addDomItems, { passive: true });
-      
-      this.childrenMounted();
-      
-    },
-    viewsbeforeUnmount: function() {
-      
-      this.scrollContainer.removeEventListener('scroll', this.addDomItems);
-      this.mountedChildren = false;
-      
-    },
-    
-    addDomItems: _.throttle( function(e) {
-      if ( this.$store.state.lazyScroll ) {
-        
-        const gridView = this.$store.state.sticky.viewMode === 'grid';
-        let bottomOffset = gridView ? 550 + (window.innerHeight/2) : (this.scrollContainer.clientHeight/3);
-        let container = gridView ? document.documentElement : this.scrollContainer;
-        let atTheBottom = container.scrollTop + (container.innerHeight || container.clientHeight) + bottomOffset >= container.scrollHeight;
-        
-        // At the bottom of currently rendered chunk
-        if ( atTheBottom ) this.$store.commit('chunkCollectionAdd');
-        
-        // Update scroll distance
-        // Don't update with book details open, because it takes precedence
-			  this.$updateQueries({ y: container.scrollTop });
-        
-      }
-    }, 450, { leading: false, trailing: true }),
     
     searchMounted() {
       

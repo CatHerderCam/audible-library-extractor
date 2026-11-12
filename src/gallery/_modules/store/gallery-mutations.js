@@ -26,14 +26,54 @@ export default {
   },
 
   buildStandaloneData: function(state, inputArray) {
-    state.library = state.library || {};
+    state.audibledata = state.audibledata || {};
     _.each(inputArray, function( item ) {
-      if ( item.key ) _.set( state, 'library.' + item.key, Object.freeze( item.value ));
+      if ( item.key ) _.set( state, 'audibledata.' + item.key, Object.freeze( item.value ));
     });
   },
 
   stickyProp: function(state, o) {
     state.sticky[o.key] = o.value;
+  },
+
+  // Re-validates the saved cover size against the grid's current measurements, so a size
+  // saved under a different viewport/layout snaps to the nearest size that still fits.
+  // Runs whenever the grid re-measures (mount, resize, layout change), not just when the
+  // settings panel happens to be open, since that's the only place this used to apply.
+  snapCoverSize: function(state) {
+
+    const current = state.sticky.coverSize;
+    if ( !current ) return;
+
+    const listMode = state.sticky.gridDetailsMode === 'list';
+    const available = state.gridAvailableWidth;
+    if ( !available ) return;
+
+    const gridWidth = listMode
+      ? available
+      : Math.min( state.sticky.gridMaxWidth || state.gridDefaultMaxWidth, available );
+
+    const coverSizeMin = ( state.windowWidth < state.mobileWidth ) ? state.coverSizeMinMobile : state.coverSizeMin;
+
+    const MIN_STEP_GAP = 10;
+    const raw = [];
+    let n = ( !listMode && state.windowWidth >= state.mobileWidth ) ? 2 : 1;
+    while ( true ) {
+      const size = Math.floor( gridWidth / n );
+      if ( size < coverSizeMin ) break;
+      raw.push( { size: Math.min( size, state.coverSizeMax ), n } );
+      n++;
+    }
+    const steps = raw.reduce(function( kept, entry, i ) {
+      if ( i === 0 || i === raw.length - 1 ) return kept.concat( entry );
+      if ( kept[ kept.length - 1 ].size - entry.size >= MIN_STEP_GAP ) return kept.concat( entry );
+      return kept;
+    }, [] ).reverse();
+    if ( !steps.length ) return;
+
+    const snapped = _.minBy( steps, s => Math.abs( s.size - current ) ).size;
+    if ( snapped !== current ) state.sticky.coverSize = snapped;
+
   },
 
   addListRenderingOpts: function(state, o) {
@@ -78,6 +118,12 @@ export default {
       if ( sortValues ) sortValues.active = o.sortValues;
     }
 
+    // null = "Follow sort"; any sort key = lock the displayed value to that field.
+    if ( o.sortValuesDisplayKey !== undefined ) {
+      let sortValues = _.find( state.listRenderingOpts.sort, { key: 'sortValues' });
+      if ( sortValues ) sortValues.displayKey = o.sortValuesDisplayKey;
+    }
+
     // if ( o.group ) {
     //   let groupies = _.filter( currentList, { group: currentItem.group });
     //   _.each( groupies, function( groupie, index ) {
@@ -112,37 +158,6 @@ export default {
 
   },
 
-  chunkCollectionReset: function( state ) {
-    state.chunkDistance = state.sticky.viewMode === 'grid' ? 52 : 80;
-    state.sticky.chunkLocation = 0;
-    state.chunkCollection = [];
-  },
-
-  chunkCollectionAdd: function( state, config ) {
-
-    config = config || {};
-
-    const searchIsActive = state.searchQuery.trim() !== "";
-    const source = searchIsActive ? state.searchCollection : state.mutatingCollection;
-    if ( source.length > 0 ) {
-      const location = config.chunkDistance ? config.chunkDistance : parseFloat( state.sticky.chunkLocation );
-      let sliceOfLife = config.chunkDistance ? source.slice( 0, location ) : source.slice( location, location+state.chunkDistance );
-      if ( sliceOfLife.length > 0 ) {
-
-        if ( config.chunkDistance ) {
-          state.chunkCollection = sliceOfLife;
-        }
-        else {
-          state.chunkCollection = state.chunkCollection.concat( sliceOfLife );
-        }
-
-        state.sticky.chunkLocation = location + state.chunkDistance;
-
-      }
-    }
-
-  },
-  
   navHistory: function( state, config ) {
     
     const direction = config.pushOnly ? config.key : (config.key === 'back' ? 'forward' : 'back');

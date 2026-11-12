@@ -7,9 +7,19 @@ import {
 } from "date-fns";
 
 export default {
+  hasPurchaseDate: function( state ) {
+    return _.some( state.audibledata.library, 'purchaseDate' );
+  },
   sortValues: function( state ) {
     const sortValues = _.find( _.get(state,'listRenderingOpts.sort'), { key: "sortValues" });
     return _.get(sortValues, 'active');
+  },
+
+  // The sort key whose value is locked into the grid display, independent of the active
+  // sorter. null means "Follow sort" (show whatever's being sorted by).
+  sortValuesKey: function( state ) {
+    const sortValues = _.find( _.get(state,'listRenderingOpts.sort'), { key: "sortValues" });
+    return _.get(sortValues, 'displayKey') || null;
   },
   sortBy: function( state ) {
     const sort = _.find( _.get(state,'listRenderingOpts.sort'), 'current');
@@ -40,12 +50,12 @@ export default {
     return state.searchQuery.trim() !== "";
   },
   collectionSource: function( state, getters ) {
-    const libary = state.collectionSource === 'library.books';
+    const libary = state.collectionSource === 'audibledata.library';
     return libary ? getters.regularBooks : _.get(state, state.collectionSource);
     // return getters.searchIsActive ? state.searchCollection : libary ? getters.regularBooks : _.get(state, state.collectionSource);
   },
   collectionTotal: function( state, getters ) {
-    const libary = state.collectionSource === 'library.books';
+    const libary = state.collectionSource === 'audibledata.library';
     return libary ? getters.regularBooks.length : _.get(state, state.collectionSource, []).length;
   },
   collection: function( state, getters ) {
@@ -112,13 +122,13 @@ export default {
   
   regularBooks( state, getters ) {
     
-    const books = _.filter(state.library.books, o => !_.get(o,'podcastParent'));
+    const books = _.filter(state.audibledata.library, o => !_.get(o,'podcastParent'));
     return books;
-    
+
   },
   podcasts( state, getters ) {
-    
-    const books = state.library.books;
+
+    const books = state.audibledata.library;
     const podcasts = _.filter(books, 'podcastParent');
     return podcasts;
     

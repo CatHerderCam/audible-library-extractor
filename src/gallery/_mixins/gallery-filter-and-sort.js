@@ -8,6 +8,7 @@ import sortRatings from "@output-mixins/sort/gallery-ratings.js";
 import sortByLength from "@output-mixins/sort/gallery-byLength.js";
 import sortProgress from "@output-mixins/sort/gallery-progress.js";
 import sortDateAdded from "@output-mixins/sort/gallery-dateAdded.js";
+import sortPurchaseDate from "@output-mixins/sort/gallery-purchaseDate.js";
 import sortFavorites from "@output-mixins/sort/gallery-favorites.js";
 import sortWhispersync from "@output-mixins/sort/gallery-whispersync.js";
 import sortBookNumbers from "@output-mixins/sort/gallery-bookNumbers.js";
@@ -15,6 +16,7 @@ import sortReleaseDate from "@output-mixins/sort/gallery-releaseDate.js";
 import sortStringNameProp from "@output-mixins/sort/gallery-stringNameProp.js";
 import sortMissing from "@output-mixins/sort/gallery-missing.js";
 import sortPrice from "@output-mixins/sort/gallery-price.js";
+import sortNumericProp from "@output-mixins/sort/gallery-numericProp.js";
 
 export default {
   mixins: [
@@ -27,6 +29,7 @@ export default {
     sortProgress,
     sortByLength,
     sortDateAdded,
+    sortPurchaseDate,
     sortFavorites,
     sortWhispersync,
     sortBookNumbers,
@@ -34,6 +37,7 @@ export default {
     sortStringNameProp,
     sortMissing,
     sortPrice,
+    sortNumericProp,
   ],
   methods: {
 
@@ -92,6 +96,9 @@ export default {
           case "added":
             books = this.sortDateAdded(sortOptions);
             break;
+          case "purchaseDate":
+            books = this.sortPurchaseDate(sortOptions);
+            break;
           case "releaseDate":
             books = this.sortReleaseDate(sortOptions);
             break;
@@ -111,6 +118,7 @@ export default {
           case "isNew":
           case "language":
           case "fromPlusCatalog":
+          case "isPreorder":
           case "unavailable":
           case "favorite":
           case "downloaded":
@@ -152,6 +160,25 @@ export default {
             break;
           case "price":
             books = this.sortPrice(sortOptions);
+            break;
+          case "myRatingAvg":
+          case "ratingWeightedAvg":
+          case "totalHours":
+          case "newestReleaseYear":
+          case "myRatingMax":
+          case "ratingMax":
+          case "ratingPopularity":
+          case "avgHours":
+          case "oldestReleaseYear":
+          case "finishedCount":
+          case "unfinishedCount":
+          case "standaloneCount":
+          case "uniqueAuthorsCount":
+          case "uniqueNarratorsCount":
+          case "uniqueSeriesCount":
+          case "totalInSeries":
+          case "pctFinishedOfAll":
+            books = this.sortNumericProp(sortOptions);
             break;
         }
       }

@@ -1,16 +1,17 @@
 <template>
 <div v-if="!loading" id="nav-outer-wrapper" :class="{ regular: !mobileThreshold, 'mobile-nav': mobileThreshold, 'mobile-nav-open': mobileMenuOpen }">
   <div id="ale-navigation" ref="navigation">
-    
-    <gallery-navigation-looper :routes="routes" v-model:mobileMenuOpen="mobileMenuOpen" :inRoot="true" :desktopMenu="!mobileMenuOpen" />
-    
-    <!-- Component opened by one of the menu items -->
-    <div class="floater-components" v-if="!mobileThreshold">
-      <component v-if="clickedRouteComp" :is="clickedRouteComp" @closeComp="clickedRoute = null" />
-    </div>
+
+    <gallery-navigation-looper :routes="routes" v-model:mobileMenuOpen="mobileMenuOpen" :inRoot="true" :desktopMenu="!mobileMenuOpen" :subpageMenuSource="subpageMenuSource" />
     <!-- <mobile-menu /> -->
-    
+
+    <!-- Inside the nav so its height is part of the measured topNavOffset -->
+    <gallery-subpage-menu-bar v-if="!mobileThreshold" :source="subpageMenuSource" />
+
   </div>
+
+  <!-- Component opened by one of the menu items (outside #ale-navigation so mobile-nav display:none doesn't affect it) -->
+  <component v-if="clickedRouteComp" :is="clickedRouteComp" @closeComp="clickedRoute = null" />
   
   <gallery-mobile-menu-floaters v-if="mobileThreshold" v-model:mobileMenuOpen="mobileMenuOpen" :mobileThreshold="mobileThreshold" @startSearching="startSearching" />
   
@@ -26,9 +27,29 @@
 
 import saveGallery from '@output-snippets/save-gallery.vue';
 import saveCSV from '@output-snippets/save-csv.vue';
+import galleryChangelog from '@output-snippets/gallery-changelog.vue';
+import { storageSet } from '@utils/chrome-storage.js';
+import openWallpaperCreator from '@output-mixins/gallery-open-wallpaper-creator.js';
+import { subpageMenuSourceAvailable, currentSubpageMenuSource } from '@output-mixins/gallery-subpage-menu-destinations.js';
+
+// ICON IMPORTS
+import IconIwwaArrowDown   from '~icons/iwwa/arrow-down?raw';
+import IconFaBrandsAudible      from '~icons/fa6-brands/audible?raw';
+import IconFaSolidGraduationCap from '~icons/fa6-solid/graduation-cap?raw';
+import IconFluentColorCloud     from '~icons/fluent-color/cloud-16?raw';
+import IconVscodeFileTypeExcel  from '~icons/vscode-icons/file-type-excel?raw';
+import IconFaSolidHouseUser     from '~icons/fa6-solid/house-user?raw';
+import IconFaSolidHome          from '~icons/fa6-solid/house?raw';
+import IconFaBrandsGithub       from '~icons/fa6-brands/github?raw';
+import IconCodiconStarFull      from '~icons/codicon/star-full?raw';
+
+// Recolored streamline-color:screensaver-monitor-wallpaper-flat: white screen with a neutral gray
+// border/stand (instead of the set's stock blue), orange sun, teal mountains.
+const IconWallpaperMonitor = `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 14 14"><g fill="none"><path fill="#8a8f98" fill-rule="evenodd" d="M5.635 10.332a.5.5 0 0 1 .47-.332h1.79a.5.5 0 0 1 .47.332l.687 1.918H10a.75.75 0 0 1 0 1.5H4a.75.75 0 0 1 0-1.5h.948z" clip-rule="evenodd"/><path fill="#ffffff" stroke="#8a8f98" stroke-width="0.6" fill-rule="evenodd" d="M1.457.25C.652.25 0 .902 0 1.707v7.586c0 .805.652 1.457 1.457 1.457h11.086c.805 0 1.457-.652 1.457-1.457V1.707C14 .902 13.348.25 12.543.25z" clip-rule="evenodd"/><path fill="#f79a1c" d="M3.945 5.008a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3"/><path fill="#2ba58c" fill-rule="evenodd" d="M12 6.334L9.422 4.48a1.18 1.18 0 0 0-1.52.032L3.377 8.75H12z" clip-rule="evenodd"/></g></svg>`;
 
 export default {
   name: "aleMenuActions",
+  mixins: [ openWallpaperCreator ],
   data: function() {
     return {
       store: this.$store.state,
@@ -49,17 +70,25 @@ export default {
       if ( component ) {
         return {...component};
       }
-      // return _.get( this.clickedRoute, 'meta.component' );
     },
     
     mobileThreshold() {
       return this.$store.getters.mobileThreshold;
     },
+
+    subpageMenuSource() {
+
+      const source = currentSubpageMenuSource( this.$route, this.$store.state.sticky.subPageSource );
+
+      // Galleries can be extracted without a library or without a wishlist.
+      return subpageMenuSourceAvailable( this.$store, source ) ? source : null;
+
+    },
   },
   
   watch: {
     '$store.state.playingAudio': function() {
-      this.globalTopNavHeight( this.mobileSize );
+      this.globalTopNavHeight( this.mobileThreshold );
     },
     mobileThreshold( mobileSize ) {
       this.mobileMenuOpen = false;
@@ -76,18 +105,29 @@ export default {
     clickedRouteComp( open ) {
       this.$store.commit('prop', { key: 'preventScrolling', value: open });
     },
+    // The bar adds a row to the nav, so page content has to be pushed down by its height.
+    subpageMenuSource() {
+      this.globalTopNavHeight( this.mobileThreshold );
+    },
   },
   
   created() {
     
     this.routes = this.getRoutes();
+
+    // Debugging: Open save gallery on page load 
+    // let saveGallery = _.find( this.routes, route => _.get(route, 'name') === "extension-tools" );
+    // if ( saveGallery ) {
+    //   saveGallery = _.find(saveGallery.childItems, { name: "Save gallery website" });
+    //   this.routeClick(saveGallery);
+    // }
     
   },
   
   mounted: function() {
     
     this.loading = false;
-    this.globalTopNavHeight( this.mobileSize );
+    this.globalTopNavHeight( this.mobileThreshold );
     // document.addEventListener("mousedown", this.outsideClick, { passive: true });
     // this.$compEmitter.on("afterWindowResize", this.onWindowResize);
     
@@ -107,22 +147,25 @@ export default {
     },
     
     getRoutes() {
-      
+
       let routes = _.filter( this.$router.options.routes, 'meta.icon' );
           routes = JSON.parse(JSON.stringify( routes ));
-      
+
+      // Sub pages are reached through the subpage menu bar on desktop and the subpage menu
+      // accordion on mobile, so they never belong in the menu itself.
+      _.remove( routes, ( route ) => _.get( route, 'meta.nestedGroup' ) === 'subPages' );
+
       if ( !this.mobileThreshold ) {
         this.getExtraItems( routes );
         this.getNestedGroups( routes );
       }
-      
+
       return routes;
-      
+
     },
     
     getNestedGroups( routes ) {
       
-      const vue = this;
       const indexes = this.getNestedIndexes( routes );
       
       // Detach all nestedGroups from the routes array...
@@ -136,46 +179,18 @@ export default {
       // Put nested groups back...
       _.each( removedRoutes, function( routeGroup, key ) {
         const indexObj = _.find(indexes, { key: key });
-        if ( indexObj ) routes.splice(indexObj.index, 0, vue.getSubPageSettings(routeGroup, key));
+        if ( indexObj ) {
+          routes.splice(indexObj.index, 0, {
+            name: key,
+            meta: {
+              groupName: routeGroup[0].meta.nestedGroup,
+              icon: IconIwwaArrowDown,
+            },
+            tag: 'div',
+            childItems: _.orderBy(routeGroup, 'meta.order', 'asc'),
+          });
+        }
       });
-      
-    },
-    
-    getSubPageSettings( routeGroup, key ) {
-      
-      const vue = this;
-      const group = {
-        name: key,
-        meta: {
-          groupName: routeGroup[0].meta.nestedGroup,
-          icon: 'fa-solid fa-chevron-down',
-        },
-        tag: 'div',
-        childItems: _.orderBy(routeGroup, 'meta.order', 'asc'),
-      };
-      
-      const groupName = routeGroup[0].meta.nestedGroup;
-      
-      switch( groupName ) {
-        case 'subPages':
-          group.altName = function( route ) {
-            
-            const routeTitle = _.get( vue.$route, 'meta.title');
-            const labelPath = 'children.0.meta.title';
-            const routeMatch = _.find( routeGroup, [ labelPath, routeTitle ]);
-            if ( routeMatch ) {
-              const prefix = vue.$route.query.subPageSource || vue.$store.state.sticky.subPageSource;
-              return _.startCase(prefix) + ': ' + _.get( routeMatch, labelPath );
-            }
-            else {
-              return _.startCase( key );
-            }
-            
-          };
-          break;
-      }
-      
-      return group;
       
     },
     
@@ -222,7 +237,7 @@ export default {
             name: 'Open Audible library',
             disabled: false,
             meta: {
-              icon: 'fa-brands fa-audible',
+              icon: IconFaBrandsAudible,
               nestedGroup: 'extension-tools'
             },
           },
@@ -232,18 +247,51 @@ export default {
             name: 'Extension documentation',
             disabled: false,
             meta: {
-              icon: 'fa-solid fa-graduation-cap',
+              icon: IconFaSolidGraduationCap,
               nestedGroup: 'extension-tools'
+            },
+          },
+          {
+            tag: 'a',
+            href: 'https://github.com/joonaspaakko/audible-library-extractor',
+            name: 'Source',
+            disabled: false,
+            meta: {
+              icon: IconFaBrandsGithub,
+              nestedGroup: 'extension-tools'
+            },
+          },
+          {
+            tag: 'a',
+            href: 'https://github.com/joonaspaakko/audible-library-extractor/issues',
+            name: 'Report an issue',
+            disabled: false,
+            meta: {
+              icon: IconFaBrandsGithub,
+              nestedGroup: 'extension-tools'
+            },
+          },
+          {
+            isResource: true,
+            tag: 'div',
+            name: 'What’s new',
+            disabled: false,
+            click: this.routeClick,
+            meta: {
+              icon: IconCodiconStarFull,
+              nestedGroup: 'extension-tools',
+              component: galleryChangelog,
             },
           },
           {
             highlight: true,
             tag: 'div',
-            name: 'Save gallery website',
+            name: 'Upload gallery website',
             disabled: false,
             click: this.routeClick, 
             meta: {
-              icon: 'fa-solid fa-download',
+              icon: IconFluentColorCloud,
+              multicolorIcon: true,
               nestedGroup: 'extension-tools',
               // component: () => import( /* webpackChunkName: "save-locally" */ "@output-comps/aleSaveLocally.vue"),
               component: saveGallery,
@@ -252,11 +300,12 @@ export default {
           {
             highlight: true,
             tag: 'div',
-            name: 'CSV export&nbsp;<small>(spreadsheet)</small>',
+            name: 'Spreadsheet export',
             disabled: false,
             click: this.routeClick, 
             meta: {
-              icon: 'fa-solid fa-file-csv',
+              icon: IconVscodeFileTypeExcel,
+              multicolorIcon: true,
               nestedGroup: 'extension-tools',
               component: saveCSV,
             },
@@ -264,39 +313,22 @@ export default {
           {
             highlight: true,
             tag: 'div',
-            name: 'Wallpaper creator',
+            name: 'Collage maker',
             disabled: false,
             click: function( route ) {
-              
+
+              // When the current page has no importable books the mega menu handles
+              // the click itself, prompting for a library/wishlist source instead.
               if ( !route.condition() ) return;
-              
-              try {
-                
-                let covers = _.filter( vue.$store.getters.collection, 'asin' );
-                covers = JSON.parse(JSON.stringify(covers));
-                covers = _.chunk(covers, 50);
-                
-                let storageObj = {
-                  imageEditorChunks: covers,
-                  imageEditorChunksLength: covers.length,
-                  imageEditorTimeCode: new Date().getTime(),
-                };
-                
-                if ( vue.$store.state.pageTitle    ) storageObj.imageEditorPageTitle = vue.$store.state.pageTitle;
-                if ( vue.$store.state.pageSubTitle ) storageObj.imageEditorPageSubTitle = vue.$store.state.pageSubTitle;
-                
-                chrome.storage.local.set(storageObj).then(() => {
-                  chrome.runtime.sendMessage({ action: "openImageEditor" });
-                });
-                
-                
-              } catch (e) {}
+
+              vue.openWallpaperCreator( vue.$store.getters.collection, vue.$store.state.pageTitle, vue.$store.state.pageSubTitle );
+
             },
             condition: function() {
               return vue.$route.meta.gallery && vue.$store.getters.collection && vue.$store.getters.collection.length; // Collection being an array, not Audible collections
             },
             tippy: function() {
-              let txt = "When you open wallpaper creator, books are imported from the current page with the active sorting. Search and filters also affect what gets imported.";
+              let txt = "When you open the collage maker, books are imported from the current page with the active sorting. Search and filters also affect what gets imported.";
               const nobooks = !(vue.$route.meta.gallery && vue.$store.getters.collection && vue.$store.getters.collection.length);
               const booksWithCovers = _.filter( vue.$store.getters.collection, 'cover');
               if ( nobooks ) txt += "<br><br> <strong style='color: #db7e00; font-size: 19px;'>Can't be opened on pages that don't have any books.</strong>";
@@ -304,7 +336,8 @@ export default {
               return txt;  
             },
             meta: {
-              icon: 'fa-regular fa-image',
+              icon: IconWallpaperMonitor,
+              multicolorIcon: true,
               nestedGroup: 'extension-tools'
             },
           },
@@ -321,19 +354,14 @@ export default {
                 chrome.runtime.sendMessage({ action: "changeGalleryUrl", url: newUrl }).then(() => {
                   
                   // This part makes sure the galleryUrl sticks between sessions (assumin)
-                  chrome.storage.local.get(['extras']).then(data => {
-                    data.extras.galleryUrl = newUrl;
-                    chrome.storage.local.set({ extras: data.extras}).then(() => {
-                      
-                    });
-                  });
-                  
+                  storageSet( 'metadata', 'extras.galleryUrl', newUrl );
+
                 });
-                
+
               } catch(e) {}
             },
             meta: {
-              icon: 'fa-solid fa-house-user',
+              icon: IconFaSolidHouseUser,
               nestedGroup: 'extension-tools'
             },
           },
@@ -343,24 +371,19 @@ export default {
             disabled: false,
             click: function( route ) {
               try {
-                
+
                 const newUrl = null;
                 chrome.runtime.sendMessage({ action: "changeGalleryUrl", url: newUrl }).then(() => {
-                  
+
                   // This part makes sure the galleryUrl sticks between sessions (assumin)
-                  chrome.storage.local.get(['extras']).then(data => {
-                    data.extras.galleryUrl = newUrl;
-                    chrome.storage.local.set({ extras: data.extras}).then(() => {
-                      
-                    });
-                  });
+                  storageSet( 'metadata', 'extras.galleryUrl', newUrl );
                   
                 });
                 
               } catch(e) {}
             },
             meta: {
-              icon: 'fa-solid fa-house',
+              icon: IconFaSolidHome,
               nestedGroup: 'extension-tools'
             },
           },
@@ -380,19 +403,29 @@ export default {
     routeClick( route ) {
       this.clickedRoute = route;
     },
-    
+
     globalTopNavHeight( mobileSize ) {
       this.$nextTick(function() {
-        
+
         let offset = 0;
-        
+        let barHeight = 0;
+
         if ( !mobileSize ) {
           const nav = this.$refs.navigation;
-          if ( nav ) offset = Math.floor( nav.getBoundingClientRect().height );
+          if ( nav ) {
+            offset = Math.floor( nav.getBoundingClientRect().height );
+            const bar = nav.querySelector('#subpage-menu-bar');
+            if ( bar ) barHeight = Math.ceil( bar.getBoundingClientRect().height );
+          }
         }
-        
+
         this.$store.commit('prop', { key: 'topNavOffset', value: offset });
-        
+
+        // The padding lives on the mount element, which is the parent of this app's root,
+        // so it can't be reached with a class binding in the template.
+        const root = document.querySelector('#audible-library-extractor');
+        if ( root ) root.style.setProperty('--subpage-menu-height', barHeight + 'px');
+
       });
     },
     
@@ -483,10 +516,5 @@ export default {
 //   position: absolute;
 // }
     
-
-.floater-components {
-  position: absolute;
-  z-index: 50;
-}
 
 </style>

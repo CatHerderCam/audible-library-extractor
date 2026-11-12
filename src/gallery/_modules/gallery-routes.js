@@ -3,25 +3,38 @@ import aleLibraryView from "@output-comps/gallery-library-view.vue";
 const aleGallery     = () => import("@output-pages/gallery-root.vue");
 const aleCollections = () => import("@output-pages/gallery-collections.vue");
 const aleCategories  = () => import("@output-pages/subPages/gallery-categories.vue");
-const aleSeries      = () => import("@output-pages/subPages/gallery-series.vue");
-const aleAuthors     = () => import("@output-pages/subPages/gallery-authors.vue");
-const aleNarrators   = () => import("@output-pages/subPages/gallery-narrators.vue");
-const alePublishers  = () => import("@output-pages/subPages/gallery-publishers.vue");
+const aleSubPage     = () => import("@output-pages/subPages/gallery-sub-page.vue");
+import { seriesConfig, authorsConfig, narratorsConfig, publishersConfig } from "@output-pages/subPages/gallery-sub-page-configs.js";
+
+// ICON IMPORTS
+import IconFaSolidBook         from '~icons/fa6-solid/book?raw';
+import IconFaRegularFolderOpen from '~icons/fa6-regular/folder-open?raw';
+import IconFaSolidBookmark     from '~icons/fa6-solid/bookmark?raw';
+import IconFaSolidPodcast      from '~icons/fa6-solid/podcast?raw';
+import IconFaSolidHome         from '~icons/fa6-solid/house?raw';
+// Sub-page icons — kept in sync with the search scope icons in gallery-search.vue
+import IconFaSolidFolder       from '~icons/fa6-solid/folder?raw';
+import IconFaSolidLayerGroup   from '~icons/fa6-solid/layer-group?raw';
+import IconFaSolidUserPen      from '~icons/fa6-solid/user-pen?raw';
+import IconFaSolidMicrophone   from '~icons/fa6-solid/microphone?raw';
+import IconFaSolidBuilding     from '~icons/fa6-solid/building?raw';
 
 export default {
   library: { 
-    name: "library", path: "/library", component: aleGallery, meta: { gallery: true, title: 'Library', icon: 'fa-solid fa-book' } 
+    name: "library", path: "/library", component: aleGallery, meta: { gallery: true, title: 'Library', icon: IconFaSolidBook, subpageMenuSource: 'library' }
   },
   
   collections: {
     path: "/collections",
     component: aleLibraryView,
     meta: {
-      icon: 'fa-regular fa-folder-open',
+      icon: IconFaRegularFolderOpen,
+      nestedGroup: 'subPages',
+      order: -2,
     },
     children: [
-      { name: "collections", path: "", component: aleCollections, meta: { title: 'Collections' } },
-      { name: "collection", path: ":collection", component: aleGallery, meta: { gallery: true, title: 'Collections' } }
+      { name: "collections", path: "", component: aleCollections, meta: { subPageBar: true, title: 'Collections' } },
+      { name: "collection", path: ":collection", component: aleGallery, meta: { gallery: true, subPageBar: true, title: 'Collections' } }
     ]
   },
   
@@ -29,7 +42,8 @@ export default {
     path: "/wishlist",
     component: aleLibraryView,
     meta: {
-      icon: 'fa-solid fa-bookmark',
+      icon: IconFaSolidBookmark,
+      subpageMenuSource: 'wishlist',
     },
     children: [
       { name: "wishlist", path: "", component: aleGallery, meta: { gallery: true, title: 'Wishlist' } },
@@ -40,10 +54,12 @@ export default {
     path: "/podcasts",
     component: aleLibraryView,
     meta: {
-      icon: 'fa-solid fa-podcast',
+      icon: IconFaSolidPodcast,
+      nestedGroup: 'subPages',
+      order: -1,
     },
     children: [
-      { name: "podcasts", path: "", component: aleGallery, meta: { gallery: true, title: 'Podcasts' } },
+      { name: "podcasts", path: "", component: aleGallery, meta: { gallery: true, subPageBar: true, title: 'Podcasts' } },
     ]
   },
   
@@ -51,7 +67,7 @@ export default {
     categories: {
       path: "/categories",
       meta: {
-        icon: 'fa-solid fa-indent',
+        icon: IconFaSolidFolder,
         nestedGroup: 'subPages',
         order: 0,
       },
@@ -65,25 +81,25 @@ export default {
       path: "/series",
       component: aleLibraryView,
       meta: {
-        icon: 'fa-solid fa-list-ol',
+        icon: IconFaSolidLayerGroup,
         nestedGroup: 'subPages',
         order: 1,
       },
       children: [
-        { name: "all-series", path: "", component: aleSeries, meta: { subPage: true, title: 'Series' } },
+        { name: "all-series", path: "", component: aleSubPage, props: { routeConfig: seriesConfig }, meta: { subPage: true, title: 'Series' } },
         { name: "series", path: ":series", component: aleGallery, meta: { gallery: true, subPage: true, title: 'Series' } }
       ],
     },
     authors: {
       path: "/authors",
       component: aleLibraryView,
-      meta: { 
-        icon: 'fa-solid fa-user-group',
+      meta: {
+        icon: IconFaSolidUserPen,
         nestedGroup: 'subPages',
         order: 2,
       },
       children: [
-        { name: "authors", path: "", component: aleAuthors, meta: { subPage: true, title: 'Authors' } },
+        { name: "authors", path: "", component: aleSubPage, props: { routeConfig: authorsConfig }, meta: { subPage: true, title: 'Authors' } },
         { name: "author", path: ":author", component: aleGallery, meta: { gallery: true, subPage: true, title: 'Authors' } }
       ],
     },
@@ -91,12 +107,12 @@ export default {
       path: "/narrators",
       component: aleLibraryView,
       meta: {
-        icon: 'fa-solid fa-users',
+        icon: IconFaSolidMicrophone,
         nestedGroup: 'subPages',
         order: 3,
       },
       children: [
-        { name: "narrators", path: "", component: aleNarrators, meta: { subPage: true, title: 'Narrators' } },
+        { name: "narrators", path: "", component: aleSubPage, props: { routeConfig: narratorsConfig }, meta: { subPage: true, title: 'Narrators' } },
         { name: "narrator", path: ":narrator", component: aleGallery, meta: { gallery: true, subPage: true, title: 'Narrators' } }
       ],
     },
@@ -104,12 +120,12 @@ export default {
       path: "/publishers",
       component: aleLibraryView,
       meta: {
-        icon: 'fa-solid fa-book',
+        icon: IconFaSolidBuilding,
         nestedGroup: 'subPages',
         order: 4,
       },
       children: [
-        { name: "publishers", path: "", component: alePublishers, meta: { subPage: true, title: 'Publishers' } },
+        { name: "publishers", path: "", component: aleSubPage, props: { routeConfig: publishersConfig }, meta: { subPage: true, title: 'Publishers' } },
         { name: "publisher", path: ":publisher", component: aleGallery, meta: { gallery: true, subPage: true, title: 'Publishers' } }
       ],
     },

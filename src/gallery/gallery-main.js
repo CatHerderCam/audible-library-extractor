@@ -24,13 +24,21 @@ app.config.globalProperties.$compEmitter = new mitt();
 // VUEX store
 import store from "@output-modules/store/gallery-store-index.js";
 app.use(store);
+// Mobile haptics - DISABLED
+// The ios-haptics library (v0.1.5) relied on a bug where programmatically
+// clicking an <input type="checkbox" switch /> would trigger haptic feedback.
+// Apple patched this exploit in iOS 26.5, breaking the library.
+// https://github.com/tijnjh/ios-haptics
+// Keeping the $haptic function and all @mousedown handlers in place
+// in case something changes...
+app.config.globalProperties.$haptic = ( number ) => {
+  // No-op - haptics disabled due to iOS 26.5+ restrictions
+};
 // VUE TIPPY
 import VueTippy from "vue-tippy";
 import tippySettings from './_plugins/gallery-tippy-settings.js';
 app.use(VueTippy, tippySettings);
 import 'tippy.js/dist/tippy.css';
-// FONTAWESOME
-import '@fortawesome/fontawesome-free/css/all.css';
 // LONG PRESS
 import longPress from './_plugins/gallery-long-press.js';
 app.directive('longpress', longPress);
@@ -58,7 +66,20 @@ else if ( !standalone ) {
     // https://developer.chrome.com/apps/storage
     // Permission: "storage"
     chrome.storage.local.get(null).then(data => {
-      if (!_.isEmpty(data) && data.chunks) {
+      const migrated = helpers.methods.migrateStorageData( data );
+      if ( migrated ) {
+        chrome.storage.local.set({ audibledata: data.audibledata, metadata: data.metadata });
+        if ( migrated.remove ) chrome.storage.local.remove( migrated.remove );
+        chrome.runtime.sendMessage({ action: "rebuild-context-menu" });
+      }
+
+      // Remove stale root-level auth keys from storage (should be nested under 'auth')
+      const knownStaleKeys = [ 'github_token', 'selectedRepo', 'imageEditorChunks', 'imageEditorChunksLength', 'imageEditorTimeCode', 'imageEditorPageTitle', 'imageEditorPageSubTitle' ];
+      const toRemove = _.filter(_.keys(data), k => _.includes(knownStaleKeys, k) || _.startsWith(k, 'sb-'));
+      if ( toRemove.length ) chrome.storage.local.remove( toRemove );
+      _.each(toRemove, k => delete data[k]);
+
+      if ( !_.isEmpty( _.get(data, 'audibledata') ) ) {
         helpers.methods.glueFriesBackTogether(data);
         startVue(data);
       } else {
@@ -72,27 +93,25 @@ else {
   
   loadJSON();
   function loadJSON( afterError ) {
-    let scrpt = document.createElement("script");
-    let cacheID = document.querySelector('#audible-library-extractor').getAttribute('data-cache-id');
-    scrpt.src = "data/temp-data."+ cacheID +".js";
-    scrpt.type = "text/javascript";
-    scrpt.onload = function() {
-      
-      let tempData = window.tempDataJSON;
-      window.bookSummaryJSON = true;
-      
-      scrpt = null;
+    const cacheID = document.querySelector('#audible-library-extractor').getAttribute('data-cache-id');
+    // Validate cacheID contains only digits to prevent injection
+    if (!/^\d+$/.test(cacheID)) {
+      console.error('Invalid cacheID format');
+      return;
+    }
+    fetch(`data/temp-data.${cacheID}.json`).then(res => {
+      if ( !res.ok ) throw new Error(res.status);
+      return res.json();
+    })
+    .then(tempData => {
       startVue( tempData );
-      
-    };
-    // Tries again if there's an error loading the files, but only once...
-    scrpt.onerror = function() {
-      scrpt = null;
+    })
+    .catch(() => {
+      // Tries again if there's an error loading the files, but only once...
       setTimeout(function() {
-        if ( !afterError ) loadJSON('afterError'); // Try twice...
+        if ( !afterError ) loadJSON('afterError');
       }, 1000);
-    };
-    document.head.appendChild(scrpt);
+    });
   }
   
 }
@@ -100,12 +119,15 @@ else {
 import vuexPrep from '@output-modules/gallery-vuex-prep.js';
 
 function startVue( libraryData ) {
+
+  // Strip cache-bust query param added by the upload link before the router initializes
+  if ( location.search ) history.replaceState( null, '', location.pathname + location.hash );
   
   let standaloneRouteData;
   _.set(libraryData, 'extras.pages', {});
   if ( standalone ) {
     standaloneRouteData = JSON.parse(JSON.stringify(libraryData));
-    var cleanUp = ['books', 'series', 'collections', 'podcasts', 'wishlist'];
+    var cleanUp = ['library', 'series', 'collections', 'podcasts', 'wishlist'];
     _.each(cleanUp, function( key ) {
       if ( _.get(libraryData, key) === true ) {
         delete libraryData[ key ];

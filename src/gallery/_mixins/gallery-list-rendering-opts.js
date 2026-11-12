@@ -6,63 +6,101 @@ export default {
       
       const vue = this;
       let list = {
+        // Each scope carries its own search metadata so the '@'-autocomplete vocabulary
+        // (alias to type, label/icon to show) is derived from the active scopes rather than
+        // a separate static table. 'alias' is the canonical '@'-prefix; 'label'/'icon' tag
+        // the suggestion row. Add a scope here and its '@' support comes with it.
         scope: [{
             active: true,
             key: 'title',
+            alias: 'title',
+            label: 'Title',
+            icon: 'title',
             // weight: 2,
             weight: 15,
           },
           {
             active: true,
             key: 'authors.name',
+            alias: 'authors',
+            label: 'Authors',
+            icon: 'user-pen',
             // weight: .9,
             weight: 5,
           },
           {
             active: true,
             key: 'narrators.name',
+            alias: 'narrators',
+            label: 'Narrators',
+            icon: 'microphone',
             // weight: .9,
             weight: 5,
           },
           {
             active: true,
             key: 'series.name',
+            alias: 'series',
+            label: 'Series',
+            icon: 'layer-group',
             // weight: .8,
             weight: 10,
           },
           {
             active: false,
             key: 'categories.name',
+            alias: 'categories',
+            label: 'Categories',
+            icon: 'folder',
             // weight: .2,
             weight: 1,
           },
           {
             active: false,
             key: 'tags.name',
+            alias: 'tags',
+            label: 'Tags',
+            icon: 'tag',
             // weight: .2,
             weight: 1,
           },
           {
             active: false,
             key: 'publishers.name',
+            alias: 'publishers',
+            label: 'Publishers',
+            icon: 'building',
             // weight: .2,
             weight: 1,
           },
           {
             active: false,
             key: 'blurb',
+            alias: 'blurb',
+            label: 'Blurb',
+            icon: 'align-left',
+            // Free text, so autosuggest offers a consecutive word run from the blurb that
+            // completes what's typed, not the whole blurb.
+            sentenceMode: true,
             // weight: .5,
             weight: 1,
           },
           {
             active: false,
             key: 'summary',
+            alias: 'summary',
+            label: 'Summary',
+            icon: 'file-lines',
+            sentenceMode: true,
             // weight: .4,
             weight: 1,
           },
           {
             active: true,
             key: 'asin',
+            alias: 'asin',
+            label: 'ASIN',
+            icon: 'hashtag',
             weight: 20,
           },
         ],
@@ -207,6 +245,36 @@ export default {
           },
           {
             type: 'divider',
+            key: 'divider1.2.1',
+            excludeFromWishlist: true,
+            excludeFromPodcasts: true,
+          },
+          {
+            active: false,
+            type: 'filterExtras',
+            label: 'Not a pre-order',
+            key: 'not-preorder',
+            group: 'filterExtras',
+            excludeFromWishlist: true,
+            excludeFromPodcasts: true,
+            condition: function(book) {
+              return !(book.isPreorder || book.preorder);
+            }
+          },
+          {
+            active: false,
+            type: 'filterExtras',
+            label: 'Pre-order',
+            key: 'preorder',
+            group: 'filterExtras',
+            excludeFromWishlist: true,
+            excludeFromPodcasts: true,
+            condition: function(book) {
+              return !!(book.isPreorder || book.preorder);
+            }
+          },
+          {
+            type: 'divider',
             key: 'divider1.3.1',
             excludeFromWishlist: true,
             excludeFromPodcasts: true,
@@ -329,7 +397,7 @@ export default {
             key: 'my-review',
             group: 'filterExtras',
             condition: function(book) {
-              return _.find( vue.$store.state.library.userReviews, { asin: book.asin });
+              return _.find( vue.$store.state.audibledata.userReviews, { asin: book.asin });
             }
           },
           
@@ -425,7 +493,7 @@ export default {
             excludeFromPodcasts: true,
             key: 'whispersync-false',
             group: 'filterExtras',
-            tippy: 'Either unavailable or unkown...',
+            tippy: 'Either unavailable or unknown...',
             condition: function(book) {
               return !book.whispersync;
             }
@@ -461,7 +529,46 @@ export default {
               return !book.archived;
             }
           },
-          
+
+          {
+            excludeFromWishlist: true,
+            excludeFromPodcasts: true,
+            type: 'divider',
+            key: 'divider-purchase-date',
+          },
+
+          {
+            active: false,
+            excludeFromWishlist: true,
+            excludeFromPodcasts: true,
+            type: 'filterExtras',
+            label: 'Purchase year',
+            key: 'purchaseDate',
+            group: 'filterExtras',
+            range: true,
+            rangeMinDist: 0,
+            rangeSuffix: '',
+            rangeInterval: 1,
+            rangeMin: function() {
+              let books = vue.$store.getters.collectionSource;
+              let earliest = _.minBy( _.filter( books, 'purchaseDate' ), function( book ) {
+                return new Date( book.purchaseDate ).getFullYear();
+              });
+              return earliest ? new Date( earliest.purchaseDate ).getFullYear() : new Date().getFullYear();
+            },
+            rangeMax: function() {
+              return new Date().getFullYear();
+            },
+            condition: function( book ) {
+              if ( book.purchaseDate ) {
+                let min = this.range[0];
+                let max = this.range[1];
+                let year = new Date( book.purchaseDate ).getFullYear();
+                return year >= min && year <= max;
+              }
+            },
+          },
+
           {
             excludeFromPodcasts: true,
             type: 'divider',
@@ -575,13 +682,13 @@ export default {
               let most = 1;
               _.each(books, function(book) {
                 let bigBoe = _.maxBy(book.series, function(series) {
-                  let foundSeries = _.find(vue.$store.state.library.series, {
+                  let foundSeries = _.find(vue.$store.state.audibledata.series, {
                     asin: series.asin
                   });
                   if (foundSeries && foundSeries.books) return foundSeries.books.length;
                 });
                 if (bigBoe) {
-                  const bigBoeLength = _.find(vue.$store.state.library.series, {
+                  const bigBoeLength = _.find(vue.$store.state.audibledata.series, {
                     asin: bigBoe.asin
                   }).books.length;
                   if (most < bigBoeLength) most = bigBoeLength;
@@ -598,7 +705,7 @@ export default {
 
                 let result = false;
                 _.each(book.series, function(cSeries) {
-                  const series = _.find(vue.$store.state.library.series, {
+                  const series = _.find(vue.$store.state.audibledata.series, {
                     asin: cSeries.asin
                   });
                   if (series) {
@@ -1118,14 +1225,14 @@ export default {
             dropdownLabel: 'label',
             dropdownValueProp: 'valueProp',
             dropdownOpts: function(type) {
-              if ( vue.$store.state.library.collections ) {
-                let allTags = _.map( vue.$store.state.library.collections, function( collection ) {
+              if ( vue.$store.state.audibledata.collections ) {
+                let allTags = _.map( vue.$store.state.audibledata.collections, function( collection ) {
                   return {
                     label: collection.title,
                     valueProp: collection.id,
                   };
                 });
-                // _.each(vue.$store.state.library.collections, function(book) {
+                // _.each(vue.$store.state.audibledata.collections, function(book) {
                 //   if (book.publishers) allTags.push(_.map(book.publishers, 'name'));
                 // });
                 return _.sortBy(allTags, 'title');
@@ -1137,7 +1244,7 @@ export default {
               
               const selectedTags = _.get(this, 'value') || [];
               const collectionIds = _.get(book, 'collectionIds', []);
-              const allCollections = _.get(vue.$store.state, 'library.collections', []);
+              const allCollections = vue.$store.state.audibledata.collections || [];
               if ( selectedTags.length && collectionIds.length && allCollections.length ) {
                 
                 let ping = false;
@@ -1158,6 +1265,7 @@ export default {
         sort: [{
             active: false,
             sticky: true,
+            displayKey: null,
             key: 'sortValues',
             label: 'Show sort values',
             type: 'sortExtras',
@@ -1189,9 +1297,18 @@ export default {
             active: true,
             current: true,
             key: 'added',
-            label: 'Added',
+            label: function() { return vue.$store.getters.hasPurchaseDate ? 'Added (date)' : 'Added'; },
             type: 'sort',
             tippy: '<small>&#9650;</small> Old at the top <br><small style="display: inline-block; transform: rotate(180deg);">&#9650;</small> New at the top'
+          },
+          {
+            active: true,
+            current: false,
+            key: 'purchaseDate',
+            label: 'Purchase date',
+            type: 'sort',
+            excludeFromWishlist: true,
+            excludeFromPodcasts: true,
           },
           {
             onlyWishlist: true,
@@ -1380,6 +1497,15 @@ export default {
           {
             active: false,
             current: false,
+            key: 'isPreorder',
+            label: 'Pre-order',
+            type: 'sort',
+            excludeFromWishlist: true,
+            excludeFromPodcasts: true,
+          },
+          {
+            active: false,
+            current: false,
             key: 'downloaded',
             label: 'Downloaded',
             type: 'sort',
@@ -1434,10 +1560,6 @@ export default {
       };
       
       this.removeArchived( list );
-      
-      // FIXME: thinking about adding a dropdown that allows sorting with A and showing value from B
-      // For example, sort by "Added" and show "Author" as the 'sort value'
-      // this.addSortValueDropdown( list );
 
       this.addExcludeDropdowns( list );
       
@@ -1493,9 +1615,9 @@ export default {
     
     removeArchived: function( list ) {
 
-      if ( !this.$store.state.library.collections ) return;
+      if ( !this.$store.state.audibledata.collections ) return;
       
-      let collections = this.$store.state.library.collections;
+      let collections = this.$store.state.audibledata.collections;
       let archive = collections ? _.find( collections, { id: '__ARCHIVE' }) : null;
       if ( !archive || archive.books.length < 1 ) {
         let removeArchiveKeys = ['archived', 'not-archived'];
@@ -1508,49 +1630,7 @@ export default {
       }
       
     },
-    
-    // addSortValueDropdown: function( list) {
-      
-    //   // Obviously this is not complete in any way... but...
-    //   // FIXME: Make sure series/subpage sorter "bookNumbers" is moved
-    //   // FIXME: Not sure why yet, but the options list's arrow is not getting a new position when this dropdown makes it wider....
-      
-    //   let vue = this;
-    //   let newItem = {
-    //     active: false,
-    //     sticky: true,
-    //     key: 'sortValues-list',
-    //     label: 'Show value from a',
-    //     type: 'sortExtras',
-    //     tippy: "Shows the active sorter's value on top of the cover in the grid view.",
-    //     dropdownOpts: function(type) {
-    //       let allTags = _.filter(list.sort, { type: 'sort' });
-    //       allTags = _.map( allTags, 'label');
-    //       return allTags;
-    //     },
-    //     value: [],
-    //     condition: function(book) {
-    //       if ( book.authors ) {
-    //         let bookTags = _.map(book.authors, 'name');
-    //         let selectedTags = this.value;
-    //         if ( selectedTags.length > 0 ) {
-    //           let found = false;
-    //           _.each(selectedTags, function(selectedTag) {
-    //             if (_.includes(bookTags, selectedTag)) {
-    //               found = true;
-    //               return false;
-    //             }
-    //           });
-    //           return found;
-    //         }
-    //       }
-    //     }
-    //   };
-      
-    //   list.sort.splice(1,0, newItem);
-      
-    // },
-    
+
   }
 };
 

@@ -1,10 +1,10 @@
 <template>
-  <div id="search-options" ref="options" :class="listName+'-options'" :style="css.options">
+  <div id="search-options" ref="options" :class="[listName+'-options', { 'sub-page-options': $route.meta.subPage }]" :style="css.options">
     <div class="search-options-inner-wrap">
       
       <div class="search-opts-arrow" :style="css.arrow"></div>
       <ul v-if="listName === 'filter' && $store.getters.regularFilters" class="regular-filters" :style="{ top: $store.state.topNavOffset + 'px' }">
-        <li class="reset-filters" @click="resetFilters" content="Reset filters" v-tippy="{ placement: 'top', flipBehavior: ['top', 'right', 'bottom', 'left'] }">
+        <li class="reset-filters" @click="resetFilters" @mousedown="$haptic(1)" content="Reset filters" v-tippy="{ placement: 'top', flipBehavior: ['top', 'right', 'bottom', 'left'] }">
           <fa-solid-redo-alt/>
         </li>
         <li class="total">
@@ -28,17 +28,39 @@
         </li>
       </ul>
       
-      <ul>
-        <li 
-          class="search-option" 
-          :class="{ extras: item.type && item.type.match(/extra/i), divider: item.type === 'divider' }" 
+      <ul :class="{ 'extras-only': listName === 'filter' && !$store.getters.regularFilters }">
+        <li v-if="listName === 'filter' && !$store.getters.regularFilters"
+            class="reset-filters"
+            @click="resetFilters"
+            @mousedown="$haptic(1)"
+            content="Reset filters"
+            v-tippy="{ placement: 'top', flipBehavior: ['top', 'right', 'bottom', 'left'] }">
+          <fa-solid-redo-alt/>
+        </li>
+        <li
+          class="search-option"
+          :class="{ extras: item.type && item.type.match(/extra/i), divider: item.type === 'divider' }"
           v-for="(item, index) in filteredOptionsList" :key="item.key"
         >
-          <gallery-sorter v-if="item.type !== 'divider'" 
-          :label="item.label" :item="item" :index="index" 
+          <gallery-sorter v-if="item.type !== 'divider'"
+          :label="item.label" :item="item" :index="index"
           :currentList="optionsList" :listName="listName"
           @vue:mounted="sortersMounted"
           />
+
+          <span v-if="item.type === 'divider' && item.label" class="divider-label">{{ item.label }}</span>
+
+          <!-- Show an extra value from any field above the sort value. The sort value
+               itself always stays, so it still reads as the sort legend. -->
+          <select
+            v-if="item.key === 'sortValues' && $store.getters.sortValues"
+            class="sort-value-display"
+            :value="$store.getters.sortValuesKey || ''"
+            @change="displayKeyChanged"
+          >
+            <option value="">No extra value</option>
+            <option v-for="sortItem in displayKeyOptions" :key="sortItem.key" :value="sortItem.key">{{ resolveLabel(sortItem) }}</option>
+          </select>
         </li>
       </ul>
       
@@ -107,9 +129,17 @@ export default {
       });
       
     },
-    
-  },
 
+    // The sort fields offered as a display-value override. seriesOrder/bookNumbers are
+    // left out since they only render meaningfully on the series subpage.
+    displayKeyOptions: function() {
+      return _.filter( this.$store.state.listRenderingOpts.sort, ( item ) => {
+        return item.type === 'sort' && item.key !== 'seriesOrder' && item.key !== 'bookNumbers';
+      });
+    },
+      
+  },
+    
   created: function() {
     
     this.$store.commit('prop', { key: 'lazyScroll', value: false });
@@ -155,6 +185,19 @@ export default {
       this.$store.commit("resetFilters");
       this.$compEmitter.emit("start-filter");
       
+    },
+    
+    resolveLabel: function( item ) {
+      return _.result( item, 'label' );
+    },
+
+    displayKeyChanged: function( event ) {
+      
+      // Empty value means no extra value, stored as null.
+      const key = event.target.value || null;
+      this.$store.commit("updateListRenderingOpts", { listName: 'sort', key: 'sortValues', sortValuesDisplayKey: key });
+      this.$updateQueries({ sortValuesDisplayKey: key });
+    
     },
     
     repositionSearchOptions: _.debounce(function() {
@@ -242,7 +285,7 @@ export default {
     
     @include themify($themes) {
       color: themed(frontColor);
-      background: lighten(themed(backColor), 10);
+      background: color.adjust(themed(backColor), $lightness: 10%);
       box-shadow: 0 3px 15px rgba(#000, 0.7);
       border: 2px solid themed(audibleOrange);
     }
@@ -278,7 +321,7 @@ export default {
       border-style: solid;
       border-width: 0 10px 10px 10px;
       @include themify($themes) {
-        border-color: transparent transparent lighten(themed(backColor), 10) transparent;
+        border-color: transparent transparent color.adjust(themed(backColor), $lightness: 10%) transparent;
       }
     }
   }
@@ -298,12 +341,12 @@ export default {
     font-weight: 700;
     @include themify($themes) {
       // color: themed(backColor);
-      background: rgba( lighten(themed(frontColor), 10), .6);
-      color: rgba( lighten(themed(frontColor), 10), .65);
+      background: rgba( color.adjust(themed(frontColor), $lightness: 10%), .6);
+      color: rgba( color.adjust(themed(frontColor), $lightness: 10%), .65);
       box-shadow: 0 1px 5px rgba(themed(outerColor), .4);
       
-      // border: 1px solid rgba( lighten(themed(frontColor), 10), .4);
-      background: lighten(themed(backColor), 12);
+      // border: 1px solid rgba( color.adjust(themed(frontColor), $lightness: 10%), .4);
+      background: color.adjust(themed(backColor), $lightness: 12%);
       border: 1px solid rgba(themed(frontColor), 0.12);
       
     }
@@ -315,6 +358,10 @@ export default {
     }
   }
   
+  ul.extras-only {
+    padding-top: 30px;
+  }
+
   .reset-filters {
     outline: none;
     cursor: pointer;
@@ -326,7 +373,7 @@ export default {
     font-size: 13px;
     display: inline-block;
     @include themify($themes) {
-      color: rgba( lighten(themed(frontColor), 10), .5);
+      color: rgba( color.adjust(themed(frontColor), $lightness: 10%), .5);
     }
   }
 
@@ -409,15 +456,62 @@ export default {
           opacity: 1;
         }
       }
+      &.checkbox.has-field-icon {
+        [data-icon="field"] {
+          opacity: 0;
+        }
+        [data-icon="check"] {
+          color: #65aa3a;
+        }
+      }
     }
     
   } // .search-option
   
+  .sort-value-display {
+    display: block;
+    width: 100%;
+    margin: 4px 0 2px 0;
+    padding: 3px 6px;
+    font-size: .85em;
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+    @include themify($themes) {
+      color: themed(frontColor);
+      background: color.adjust(themed(backColor), $lightness: 4%);
+      border: 1px solid rgba(themed(frontColor), 0.2);
+    }
+  }
+
   .search-option.divider{
     padding-top: 9px;
     margin-top: 9px;
     @include themify($themes) {
       border-top: 1px solid rgba(themed(frontColor), 0.1);
+    }
+  }
+
+  // Sub-page filter lists mix checkboxes and range sliders in the same divider group
+  // (unlike the library list, which dedicates a divider to every slider), so the
+  // sliders need their own breathing room instead of relying on dividers to separate them.
+  &.filter-options.sub-page-options .search-option {
+    .sorter-button {
+      line-height: 1.3em;
+    }
+    .range-slider {
+      margin: -5px 0 10px 0;
+    }
+  }
+
+  .divider-label {
+    display: block;
+    padding: 0 9px;
+    font-size: .75em;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    @include themify($themes) {
+      color: rgba(themed(frontColor), 0.4);
     }
   }
 
@@ -430,12 +524,12 @@ export default {
   }
   
   .input-label {
-    padding: 0 5px;
+    padding: 0 5px 0 9px;
   }
   
   .regular-filters {
     @include themify($themes) {
-      background: lighten(themed(backColor), 12);
+      background: color.adjust(themed(backColor), $lightness: 12%);
       box-shadow: 0 5px 12px rgba(themed(outerColor), .3);
       border-bottom: 2px solid rgba(themed(frontColor), 0.01);
     }

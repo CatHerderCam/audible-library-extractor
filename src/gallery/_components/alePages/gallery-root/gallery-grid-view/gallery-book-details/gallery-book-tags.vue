@@ -1,7 +1,7 @@
 <template>
   <div class="book-tags">
-    <component :is="routerOrLink.tag" v-bind:[routerOrLink.attr]="makeUrl('tags', tag, (!$store.state.sticky.detailLinksToAudible ? book.tags : null))" :target="$store.state.sticky.detailLinksToAudible ? '_blank' : null" rel="noopener noreferrer" class="book-tag" v-for="tag in book.tags" :key="tag.name">
-      {{ tag.name }}
+    <component :is="routerOrLink.tag" v-bind:[routerOrLink.attr]="makeUrl('tags', tag, (!$store.state.sticky.detailLinksExternal ? book.tags : null))" :target="$store.state.sticky.detailLinksExternal ? '_blank' : null" rel="noopener noreferrer" class="book-tag" v-for="tag in book.tags" :key="tag.name">
+      {{ tag.name }}<fa6-solid-arrow-up-right-from-square class="external-link-icon" v-if="routerOrLink.tag === 'a'" />
     </component>
   </div>
 </template>
@@ -19,7 +19,7 @@ export default {
   },
   computed: {
     routerOrLink() {
-      if ( !this.$store.state.sticky.detailLinksToAudible ) {
+      if ( !this.$store.state.sticky.detailLinksExternal ) {
         return {
           tag: "router-link",
           attr: 'to',
@@ -59,6 +59,11 @@ export default {
     @include themify($themes) {
       color: rgba(themed(frontColor), 0.3) !important;
     }
+  }
+
+  .external-link-icon {
+    padding-left: 3px;
+    font-size: .6em;
   }
 }
 

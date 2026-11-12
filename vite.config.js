@@ -7,7 +7,7 @@
 // re-install the extension from the dist folder.
 
 import { fileURLToPath, URL } from 'node:url';
-import { defineConfig, splitVendorChunkPlugin } from 'vite';
+import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { crx } from '@crxjs/vite-plugin';
 // import manifest from './manifest.json'; 
@@ -36,6 +36,7 @@ const root = function( path ) { return src(path, './'); };
 const devmode = process.env.development;
 const gallerySingleFile = process.env.gallerySingleFile;
 const wallpaperSingleFile = process.env.wallpaperSingleFile;
+const standaloneShuffle = process.env.standaloneShuffle;
 const buildSingleFile = gallerySingleFile || wallpaperSingleFile;
 
 const copyFilesBefore = [
@@ -43,11 +44,18 @@ const copyFilesBefore = [
   { src: src('gallery/app.webmanifest'),    dest: dist() },
 ];
 const copyFilesAfter = [
-  { src: src('extension-js'),            dest: 'assets' },
-  { src: src('assets/js'),               dest: 'assets' },
-  { src: src('gallery/app.webmanifest'), dest: dist('') },
-  { src: src('gallery/images'),          dest: dist('assets') },
-  { src: src('gallery/favicons'),        dest: dist('') },
+  { src: src('extension-js'),            dest: 'assets/extension-js', rename: { stripBase: true } },
+  // { src: src('assets/js'),               dest: 'assets' },
+  // Lodash is used as a bare global `_` across the app. Copy it from node_modules
+  // so it can load as a classic script before any module chunk runs.
+  { src: root('node_modules/lodash/lodash.min.js'), dest: 'assets/js', rename: { stripBase: true } },
+  // The exported gallery is meant to work offline, so the pwa-install web component
+  // is copied in instead of loaded from a CDN. The bundle build has lit inlined and
+  // registers <pwa-install> by itself.
+  { src: root('node_modules/@khmyznikov/pwa-install/dist/pwa-install.bundle.js'), dest: 'assets/js', rename: { stripBase: true } },
+  { src: src('gallery/app.webmanifest'), dest: dist(''), rename: { stripBase: true } },
+  { src: src('gallery/images'),          dest: dist('assets/images'), rename: { stripBase: true } },
+  { src: src('gallery/favicons'),        dest: dist('favicons'), rename: { stripBase: true } },
 ];
 
 const inputs = {};
@@ -86,7 +94,6 @@ else {
   else {
     manualChunks = {
       jquery: ['jquery'],
-      jszip: ['jszip', 'jszip-utils'],
       howler: ['howler'],
     };
   }
@@ -96,6 +103,9 @@ else {
 export default defineConfig({
   base: '',
   publicDir: src('public'),
+  server: {
+    cors: true,
+  },
   // Build options
   // root: 'src',
   build: {
@@ -132,7 +142,6 @@ export default defineConfig({
       'async-es/mapLimit',
       'async-es/waterfall',
       'domurl',
-      'file-saver',
       'howler',
       '@splidejs/vue-splide', 
       'vue-slider-component', 
@@ -143,6 +152,7 @@ export default defineConfig({
   // Basically string replacements. You can think of as a global immutable variable.
   define: {
     "$version": JSON.stringify(process.env.npm_package_version),
+    "$standaloneShuffle": JSON.stringify(standaloneShuffle === '1'),
   },
   plugins: [
     vue(),
@@ -153,12 +163,13 @@ export default defineConfig({
       ],
       extensions: ['vue'],
       deep: true,
+      exclude: buildSingleFile ? [/[\\/]node_modules[\\/]/, /[\\/]\.git[\\/]/, /github-upload/] : undefined,
       resolvers: [
         IconsResolver({
           prefix: '',
         }),
       ],
-    }), 
+    }),
     Icons(),
     ( buildSingleFile ? undefined : crx({ manifest }) ),
     copy({
@@ -177,13 +188,13 @@ export default defineConfig({
     }),
     customFilePathsJSON,
     customSingleFileGallery,
-    buildSingleFile ? null : splitVendorChunkPlugin(),
     visualizer(),
   ],
   resolve: {
     alias: {
       '@'                 : src(''),
       '@root'             : src(''),
+      '@utils'            : src('utils'),
       '@dist'             : dist(''),
       '@fonts'            : src('fonts'),
       '@assets'           : src('assets'),
@@ -211,6 +222,7 @@ export default defineConfig({
     preprocessorOptions: {
       scss: { 
          additionalData: `
+          @use "sass:color";
           @use "@gallery/_variables.scss" as *;
         ` 
      }, 

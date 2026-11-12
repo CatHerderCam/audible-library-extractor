@@ -1,44 +1,31 @@
 <template>
-  <div 
-    class="left" id="editor-canvas-left" ref="left" 
+  <div
+    class="left" id="editor-canvas-left" ref="left"
     :data-saving-image="store.saving"
     v-shortkey="store.events.textRemove ? ['backspace'] : null" @shortkey="store.events.textRemove ? removeTextElement($event) : null"
+    @mouseenter="canvasLeftEnter" @mouseleave="canvasLeftLeave"
   >
   <!-- v-dragscroll="dragscrollEnabled" -->
-    
+
+    <div class="pan-mode-indicator" v-if="store.canvasPanning">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -60 120 120" width="80" height="80">
+        <path d="M 0,-55 L -8,-42 L -3,-42 L -3,-22 L 3,-22 L 3,-42 L 8,-42 Z" fill="white"/>
+        <path d="M 0,55 L -8,42 L -3,42 L -3,22 L 3,22 L 3,42 L 8,42 Z" fill="white"/>
+        <path d="M -55,0 L -42,-8 L -42,-3 L -22,-3 L -22,3 L -42,3 L -42,8 Z" fill="white"/>
+        <path d="M 55,0 L 42,-8 L 42,-3 L 22,-3 L 22,3 L 42,3 L 42,8 Z" fill="white"/>
+        <rect x="-11" y="-18" width="22" height="35" rx="11" fill="white"/>
+        <line x1="0" y1="-18" x2="0" y2="-7" stroke="rgba(0,0,0,0.25)" stroke-width="1.5"/>
+        <rect x="-3.5" y="-15" width="7" height="8" rx="3.5" fill="rgba(0,0,0,0.25)"/>
+      </svg>
+    </div>
+
     <tier-list-toolbar v-if="store.tierListMode" :draggableCovers="draggableCovers" />
     
-    <div class="cover-actions" v-if="store.coverActions">
-      <button v-if="$store.getters.rereadExist" class="remove-all-reread" @click="$store.commit('updateBookCover', { key: 'reread', value: false, book: store.coverActions, all: true })">
-        <fa-solid-trash-alt/>
-        &nbsp;
-        Clear all re-read books
-      </button>
-      <button class="reread" @click="$store.commit('updateBookCover', { key: 'reread', value: !store.coverActions.reread, book: store.coverActions })">
-        <ic-outline-check-circle style="color: #80f900;" v-if="store.coverActions.reread" />
-        <mdi-checkbox-blank-circle style="color: #333; border-radius: 9999px; box-shadow: inset 0 0 7px white" v-else />
-        &nbsp;
-        Re-read book
-      </button>
-    </div>
+    <cover-context-menu />
     
     <div class="show-blank-canvas" v-show="store.saving"></div>
     
-    <n-config-provider :theme="darkTheme" class="float-alert-wrapper">
-      
-      <div class="float-alert" v-if="!store.animatedWallpaperMode">
-        <n-alert v-if="overlayHidden && showOverlay" title="Ovelay temporarily hidden so you can sort covers manually" type="warning" />
-      </div>
-      
-      <div class="float-alert">
-        <n-alert v-if="store.panningAlert" title="Sort covers manually by dragging or hold space bar while dragging to move the canvas" type="info" />
-      </div>
-      
-      <div class="float-alert">
-        <n-alert v-if="$store.getters.textElementActive" title="You can also move text using arrow keys. Shift modifier increases the step to 10px" type="info" />
-      </div>
-      
-    </n-config-provider>
+    <notification-panel />
     
     <div 
       ref="grid"  
@@ -55,17 +42,10 @@
         id="editor-canvas-content"
         @mouseenter="overlayHidden = true"
         @mouseleave="overlayHidden = false"
-        :class="{ 'show-cover-padding-preview': store.slidingAround === 'paddingSize', saving: store.saving, 'hide-overlay-on-hover': showOverlay }"
+        :class="{ 'show-cover-padding-preview': store.slidingAround === 'paddingSize', saving: store.saving }"
         ref="canvas"
         :style="canvasStyle"
       >
-        
-        <div class="legend" :style="{
-          right:  store.reread.label.offset.right+'px',
-          bottom: store.reread.label.offset.bottom+'px',
-        }">
-          <reread-marker v-if="!store.animatedWallpaperMode && $store.getters.rereadExist && store.reread.label.show" :isStatic="true">relisten</reread-marker>
-        </div>
         
         <div id="canvas-bg-color" v-if="store.canvas.background" :style="{ backgroundColor: store.canvas.background }"></div>
         <div id="awp-overlay" v-if="store.awpOverlayColorEnabled" :style="{ 
@@ -77,10 +57,10 @@
         
         <div
           class="canvas-padding-preview"
-          :style="{ 
-            borderLeftWidth  : store.canvas.padding.left + 'px',
-            borderTopWidth   : store.canvas.padding.top + 'px',
-            borderRightWidth : store.canvas.padding.right + 'px',
+          :style="{
+            borderLeftWidth  : store.canvas.padding.left   + 'px',
+            borderTopWidth   : store.canvas.padding.top    + 'px',
+            borderRightWidth : store.canvas.padding.right  + 'px',
             borderBottomWidth: store.canvas.padding.bottom + 'px',
           }"
           v-show="store.slidingAround && store.slidingAround !== 'paddingSize'"
@@ -106,20 +86,19 @@
               :editorCanvasPaddingBottom="store.canvas.padding.bottom"
             />
             
-            <div v-else style="width: 100%; height: 100%; display: flex; flex-direction: row;" :style="canvasAlignmentVertical"> 
-              
-              <tier-list v-if="store.tierListMode" style="width: 100%;" @start="draggingStarted" @end="draggingEnded" @move="draggingMoved" />
-              
-              <draggable 
+            <div v-else style="width: 100%; height: 100%; display: flex; flex-direction: row;" :style="canvasAlignmentVertical">
+
+              <tier-list v-if="store.tierListMode" style="width: 100%;" :style="reservedMargins" @start="draggingStarted" @end="draggingEnded" @move="draggingMoved" />
+
+              <draggable
                 class="drag-container"
-                :class="{ 'tier-container': store.tierListMode, 'tier-container-collapse': !$store.getters.containerTierVisible }" 
-                v-if="!store.tierListMode || store.tierListMode && !store.saving"
-                v-model="draggableCovers" 
+                v-if="!store.tierListMode && !store.saving"
+                v-model="draggableCovers"
                 item-key="asin"
-                group="covers" 
-                @start="draggingStarted" 
-                @end="draggingEnded" 
-                @move="draggingMoved" 
+                group="covers"
+                @start="draggingStarted"
+                @end="draggingEnded"
+                @move="draggingMoved"
                 style="width: 100%;"
                 :style="store.tierListMode ? { marginTop: (store.paddingSize*10)+'px', minHeight: store.coverSize+'px' } : canvasAlignment"
               >
@@ -127,8 +106,16 @@
                   <cover :key="element.asin" :book="element"></cover>
                 </template>
               </draggable>
-              
+
             </div>
+
+            <unused-covers
+              v-if="!store.animatedWallpaperMode"
+              v-show="!store.saving"
+              @start="draggingStarted"
+              @end="draggingEnded"
+              @move="draggingMoved"
+            />
             
             <component v-if="!store.animatedWallpaperMode" is="style" class="cover-dynamic-sizes">
               .cover {
@@ -139,16 +126,33 @@
                 width:  {{ clampedCoverSize }}px !important;
                 height: {{ clampedCoverSize }}px !important;
               }
-              .cover .cover-heart-icon {
-                height: {{ coverIconSize }}px !important;
-                top: {{ coverIconSize/2 }}px !important;
-                right: {{coverIconSize/2 }}px !important;
+              .cover .cover-heart-icon,
+              .cover .cover-reread-icon {
+                width: {{ coverDotSize }}px !important;
+                height: {{ coverDotSize }}px !important;
+                right: {{ coverDotSize/2 }}px !important;
               }
               .cover .cover-heart-icon svg,
+              .cover .cover-reread-icon svg,
+              .cover .cover-reread-icon span {
+                font-size: {{ coverDotSize*.55 }}px !important;
+              }
+              .cover .cover-heart-icon {
+                top: {{ coverDotSize/2 }}px !important;
+              }
+              .cover .cover-reread-icon {
+                top: {{ (coverDotSize/2) + coverDotSize + (coverDotSize*.12) }}px !important;
+              }
               .cover .cover-star-icons svg {
                 font-size: {{ coverIconSize }}px !important;
                 line-height: {{ coverIconSize }}px !important;
-                {{ showStarShadow ? 'filter: drop-shadow( 0 1px 3px rgba(0,0,0, .8) );' : '' }}
+                overflow: visible !important;
+              }
+              .cover .cover-star-icons svg path {
+                paint-order: stroke fill;
+                stroke: white;
+                stroke-width: 2px;
+                stroke-linejoin: round;
               }
               .cover .cover-star-icons {
                 bottom: {{ coverStarIconsOffset }}px !important;
@@ -173,14 +177,12 @@ import animatedWallpaper from "../animated-wallpaper/animated-wallpaper-app.vue"
 import tierList from "@editor-comps/canvas/tier-list.vue";
 import tierListToolbar from "@editor-comps/canvas/tier-list-toolbar.vue";
 import cover from '@editor-comps/canvas/cover.vue';
+import notificationPanel from '@editor-comps/canvas/notification-panel.vue';
+import coverContextMenu from '@editor-comps/canvas/cover-context-menu.vue';
+import unusedCovers from '@editor-comps/canvas/unused-covers.vue';
 import zoomies from '@editor-mixins/canvas-zoom.js';
 
-import { 
-  NConfigProvider, 
-  darkTheme, 
-  NAlert,
-} from 'naive-ui';
-import { subtract } from 'lodash';
+
 
 export default {
   name: "editorCanvas",
@@ -188,66 +190,133 @@ export default {
     calculateCoverSize,
     zoomies, 
   ],
-  components: { 
-    draggable, 
-    textElement, 
+  components: {
+    draggable,
+    textElement,
     animatedWallpaper,
     tierList,
     tierListToolbar,
     cover,
-    
-    NConfigProvider,
-    NAlert,
+    notificationPanel,
+    coverContextMenu,
+    unusedCovers,
   },
   data: function () {
     return {
       store: this.$store.state,
       dragscrollEnabled: false,
       overlayHidden: false,
-      darkTheme: darkTheme,
+      canvasLeftHovered: false,
+      canvasHeightObserver: null,
     };
   },
   
   mounted: function() {
     
-    document.querySelector('#editor-canvas-left').addEventListener("mousedown", this.moveableControlsHide);
-    this.$emitter.on('hide-moveable-controls', this.moveableControlsHide);
     document.querySelector('#editor-canvas-left').addEventListener("scroll", this.panningCanvas);
     
     let coverSize = this.calculateCoverSize({ coversPerRow: this.store.coversPerRow });
     this.$store.commit('update', { key: 'coverSize', value: coverSize });
-    
+
+    let prevCanvasWidth  = this.$refs.canvas.offsetWidth;
+    let prevCanvasHeight = this.$refs.canvas.offsetHeight;
+    this.canvasHeightObserver = new ResizeObserver( ( entries ) => {
+      const rect = entries[0].contentRect;
+      this.$store.commit('update', { key: 'canvas.autoHeight', value: rect.height });
+      const newWidth  = Math.round( entries[0].borderBoxSize[0].inlineSize );
+      const newHeight = Math.round( entries[0].borderBoxSize[0].blockSize );
+      if ( newWidth !== prevCanvasWidth || newHeight !== prevCanvasHeight ) {
+        this.$emitter.emit('canvas-resized', {
+          oldWidth:  prevCanvasWidth,
+          oldHeight: prevCanvasHeight,
+          newWidth:  newWidth,
+          newHeight: newHeight,
+        });
+        prevCanvasWidth  = newWidth;
+        prevCanvasHeight = newHeight;
+      }
+    });
+    this.canvasHeightObserver.observe( this.$refs.canvas );
+
     this.$nextTick(function() {
-      
       this.dragscrollEnabled = true;
-      this.moveableControlsHide();
         
     });
-    
-    if ( this.store.tierListMode ) {
-      const tierContainer = this.$el.querySelector('.tier-container');
-      const appContainer = document.querySelector('#app');
-      appContainer.prepend( tierContainer )
-    }
     
   },
 
   beforeUnmount: function () {
-    document.querySelector('#editor-canvas-left').removeEventListener("mousedown", this.moveableControlsHide);
-    this.$emitter.off('hide-moveable-controls', this.moveableControlsHide);
     document.querySelector('#editor-canvas-left').removeEventListener("scroll", this.panningCanvas);
-    
-    const tierContainer = document.querySelector('#app > .tier-container');
-    if ( tierContainer ) tierContainer.remove();
+    if ( this.canvasHeightObserver ) this.canvasHeightObserver.disconnect();
+
     
   },
 
-  computed: {
-    
-    showOverlay() {
-      return !this.store.animatedWallpaperMode && this.store.awpOverlayColorEnabled;
+  watch: {
+
+    'store.tierListMode': {
+      immediate: true,
+      handler: function( active ) {
+        if ( active ) {
+          // move all canvas covers to hiddenCovers (opt-in)
+          const all = this.store.covers.concat( this.store.hiddenCovers );
+          this.$store.commit('update', { key: 'hiddenCovers', value: all });
+          this.$store.commit('update', { key: 'covers', value: [] });
+          this.$store.commit('setUnusedSidebarVisibility', true);
+        }
+        else {
+          // move all hiddenCovers back to canvas (restore)
+          const all = this.store.covers.concat( this.store.hiddenCovers );
+          this.$store.commit('update', { key: 'covers', value: all });
+          this.$store.commit('update', { key: 'hiddenCovers', value: [] });
+          this.$store.commit('setUnusedSidebarVisibility', false);
+        }
+      },
     },
-    
+
+    reservedPadding: {
+      handler: function( newVal, oldVal ) {
+        if ( newVal.left !== oldVal.left || newVal.right !== oldVal.right ) {
+          // calculateCoverSize folds reserved padding in itself, so call it plainly.
+          const coverSize = this.calculateCoverSize();
+          this.$store.commit( 'update', { key: 'coverSize', value: coverSize } );
+        }
+      },
+      deep: true,
+    },
+
+    'textElementActive': function( active ) {
+      if ( active ) {
+        this.$store.commit('addNotification', { id: 'text-arrow-keys', type: 'arrows', message: 'Drag to move, or use arrow keys. Shift gives larger steps.' });
+        this.$store.commit('addNotification', { id: 'text-dblclick',   type: 'text',   message: 'Double-click to edit text.' });
+      }
+      else {
+        this.$store.commit('removeNotification', 'text-arrow-keys');
+        this.$store.commit('removeNotification', 'text-dblclick');
+      }
+    },
+
+    'store.panningAlert': function( active ) {
+      if ( active ) {
+        this.$store.commit('addNotification', { id: 'panning', icon: 'arrows', color: 'red', message: 'Drag to reorder covers. Hold Space to pan instead.' });
+        this.$store.commit('removeNotification', 'canvas-pan');
+      }
+      else {
+        this.$store.commit('removeNotification', 'panning');
+        if ( this.canvasLeftHovered ) {
+          this.$store.commit('addNotification', { id: 'canvas-pan', icon: 'hand-fill', color: 'blue', message: 'Drag to move around.' });
+        }
+      }
+    },
+
+  },
+
+  computed: {
+
+    textElementActive: function() {
+      return this.$store.getters.textElementActive;
+    },
+
     paddingSizeNumber: function() {
       return parseFloat( this.store.paddingSize );
     },
@@ -257,9 +326,13 @@ export default {
     },
     
     coverIconSize: function() {
-      return _.clamp( this.store.coverSize/7.3, 0, Infinity ); 
+      return _.clamp( this.store.coverSize/7.3, 0, Infinity );
     },
-    
+
+    coverDotSize: function() {
+      return _.clamp( this.store.coverSize*.14, 0, Infinity );
+    },
+
     coverStarIconsOffset: function() {
       
       const starSize  = this.coverIconSize * .9; 
@@ -271,24 +344,33 @@ export default {
       return value; 
     },
     
-    showStarShadow: function() {
-      return this.coverStarIconsOffset > -this.coverIconSize; 
-    },
-    
     draggableCovers: {
       get() {
-        let covers = this.store.covers;
-            covers = this.store.excludeArchived ? _.filter(covers, function(o) { return !o.inArchive; }) : covers;        
+        const hiddenAsins = new Set( _.map( this.store.hiddenCovers, 'asin' ) );
+        let covers = _.filter( this.store.covers, o => !hiddenAsins.has( o.asin ) );
+        if ( this.store.coversRandomized && this.store.randomizedOrder.length ) {
+          const indexMap = _.keyBy(covers, 'asin');
+          const ordered = _.compact( _.map(this.store.randomizedOrder, asin => indexMap[asin]) );
+          const rest = _.filter(covers, o => !_.includes(this.store.randomizedOrder, o.asin));
+          covers = ordered.concat(rest);
+        }
+        covers = this.store.excludeArchived ? _.filter(covers, function(o) { return !o.inArchive; }) : covers;
         return covers.slice(0, this.store.coverAmount);
       },
       set(value) {
         this.$store.commit('update', { key: 'covers', value: value  });
       }
     },
+
     usedCovers: {
       get() {
         let covers = this.store.covers;
-            covers = this.store.excludeArchived ? _.filter(covers, function(o) { return !o.inArchive; }) : covers;        
+        if ( this.store.coversRandomized && this.store.randomizedOrder.length ) {
+          const indexMap = _.keyBy(covers, 'asin');
+          covers = _.compact( _.map(this.store.randomizedOrder, asin => indexMap[asin]) );
+          covers = covers.concat( _.filter(this.store.covers, o => !_.includes(this.store.randomizedOrder, o.asin)) );
+        }
+        covers = this.store.excludeArchived ? _.filter(covers, function(o) { return !o.inArchive; }) : covers;
         return covers.slice(0, this.store.coverAmount);
       },
       set(value) {
@@ -296,8 +378,13 @@ export default {
       }
     },
     
+    reservedPadding: function() {
+      return this.$store.getters.reservedPadding;
+    },
+
     canvasStyle: function () {
       var style = {};
+      const p = this.store.canvas.padding;
       if (this.store.canvas.width > 0) {
         style.width = this.store.canvas.width + "px";
       }
@@ -307,18 +394,12 @@ export default {
       if (this.store.canvas.height > 0) style.height = this.store.canvas.height + "px";
       if (this.store.saving) style.borderColor = "transparent";
       if (this.store.saving) style.outlineColor = "transparent";
-      
-      style.paddingLeft   = this.store.canvas.padding.left   > -1 ? this.store.canvas.padding.left   + "px" : 0 + "px";
-      style.paddingTop    = this.store.canvas.padding.top    > -1 ? this.store.canvas.padding.top    + "px" : 0 + "px";
-      style.paddingRight  = this.store.canvas.padding.right  > -1 ? this.store.canvas.padding.right  + "px" : 0 + "px";
-      style.paddingBottom = this.store.canvas.padding.bottom > -1 ? this.store.canvas.padding.bottom + "px" : 0 + "px";
-      
-      // if ( this.store.saving ) style.transform = null;
-      // else if (this.store.canvas.zoom > 0 && this.store.canvas.zoom != 1) {
-      //   style.transform = "scale(" + this.store.canvas.zoom + ")";
-      // }
-      // if (this.store.canvas.transformOrigin) style.transformOrigin = this.store.canvas.transformOrigin;
-      
+
+      style.paddingLeft   = ( p.left   > -1 ? p.left   : 0 ) + "px";
+      style.paddingTop    = ( p.top    > -1 ? p.top    : 0 ) + "px";
+      style.paddingRight  = ( p.right  > -1 ? p.right  : 0 ) + "px";
+      style.paddingBottom = ( p.bottom > -1 ? p.bottom : 0 ) + "px";
+
       return style;
     },
     // coverStyle: function () {
@@ -347,26 +428,25 @@ export default {
     //   } 
     //   return style;
     // },
+    // RESERVED MARGINS: the text-reserved space expressed as plain margins. Shared by the cover
+    // draggable and the tier list so reservations push content in on every side in both modes.
+    reservedMargins: function() {
+      const rp = this.reservedPadding;
+      return {
+        marginTop:    rp.top    ? rp.top    + 'px' : null,
+        marginRight:  rp.right  ? rp.right  + 'px' : null,
+        marginBottom: rp.bottom ? rp.bottom + 'px' : null,
+        marginLeft:   rp.left   ? rp.left   + 'px' : null,
+      };
+    },
+
     canvasAlignment: function() {
       let style = {};
-      
+
       style.textAlign = this.store.canvas.alignment;
       style.position = this.store.canvas.height > 0 ? 'absolute' : null;
-      // if ( this.store.canvas.height > 0 ) style.height = this.store.canvas.height + 'px';
-      // if ( this.store.canvas.alignmentVertical === 'flex-start' ) {
-      //   style.marginTop = 'auto';
-      //   style.marginBottom = null;
-      // }
-      // else if ( this.store.canvas.alignmentVertical === 'center' ) {
-      //   style.marginTop = 'auto';
-      //   style.marginBottom = 'auto';
-      // }
-      // else if ( this.store.canvas.alignmentVertical === 'flex-end' ) {
-      //   style.marginTop = null;
-      //   style.marginBottom = 'auto';
-      // }
-      
-      return style;
+
+      return _.assign( style, this.reservedMargins );
     },
     canvasAlignmentVertical: function() {
       let style = {};
@@ -422,6 +502,20 @@ export default {
       }
     },
     
+    canvasLeftEnter: function() {
+      this.canvasLeftHovered = true;
+      this.$store.commit('addNotification', { id: 'zoom-hint', icon: 'scroll', color: 'info', message: 'Scroll to zoom.' });
+      if ( !this.store.panningAlert ) {
+        this.$store.commit('addNotification', { id: 'canvas-pan', icon: 'hand-fill', color: 'blue', message: 'Drag to move around.' });
+      }
+    },
+
+    canvasLeftLeave: function() {
+      this.canvasLeftHovered = false;
+      this.$store.commit('removeNotification', 'zoom-hint');
+      this.$store.commit('removeNotification', 'canvas-pan');
+    },
+
     panningCanvas: function() {
       this.$emitter.emit('update-moveable-handles');
     },
@@ -430,23 +524,6 @@ export default {
       
       var activeIndex = _.findIndex( this.store.textElements, 'active');
       if ( activeIndex > -1 ) this.$store.commit('removeText', activeIndex);
-      
-    },
-    
-    moveableControlsHide: function( e ) {
-      
-      let textElement = !e ? false : e.target.classList.contains('text-element') || e.target.classList.contains('text-element-child');
-      if ( !textElement ) {
-        
-        this.$store.commit("activateText", -1);
-        
-        let transformBoxes = document.querySelectorAll('.moveable-control-box');
-        if ( transformBoxes.length ) {
-          transformBoxes.forEach(function( controlEl, controlIndex ) {
-            controlEl.style.display = 'none';
-          });
-        }
-      }
       
     },
     
@@ -497,7 +574,7 @@ export default {
   overflow: scroll;
   flex: 1;
   background-image: url("data:image/png;base64,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");
-  box-shadow: inset 0 0 15px darken( rgba(#171e29, .3), 20);
+  box-shadow: inset 0 0 15px color.adjust(rgba(#171e29, .3), $lightness: -20%);
   // display: block !important;
 }
 
@@ -508,6 +585,21 @@ export default {
   }
 }
 
+#editor-canvas-content .canvas-bounds {
+  cursor: grabbing !important;
+}
+#editor-canvas-content .grid-inner-wrap > div {
+  cursor: grabbing !important;
+}
+#editor-canvas-content .drag-container {
+  cursor: grabbing !important;
+}
+#editor-canvas-content .drag-container .cover {
+  cursor: move !important;
+}
+
+
+
 .grid.force-panning:before {
   content: '';
   position: fixed;
@@ -516,8 +608,22 @@ export default {
   right: 0;
   bottom: 0;
   left: 0;
-  // background: rgba(red, .4);
-  backdrop-filter: blur(1px) grayscale(1);
+}
+
+.pan-mode-indicator {
+  position: absolute;
+  inset: 0;
+  z-index: 10000;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(#000, .22);
+
+  svg {
+    filter: drop-shadow( 0 2px 14px rgba(0, 0, 0, .8) );
+    opacity: .9;
+  }
 }
 
 .show-blank-canvas {
@@ -528,7 +634,7 @@ export default {
   bottom: 0;
   left: 0;
   background-image: url("data:image/png;base64,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");
-  box-shadow: inset 0 0 15px darken( rgba(#171e29, .3), 20);
+  box-shadow: inset 0 0 15px color.adjust(rgba(#171e29, .3), $lightness: -20%);
   display: flex;
   justify-content: center;
   justify-items: center;
@@ -649,7 +755,7 @@ export default {
   left: 0;
   flex: 1;
   border-style: solid !important;
-  border-color: rgba(#ff394f, .45) !important;
+  border-color: rgba(#73c061, .5) !important;
 }
 
 .text-elements {
@@ -686,143 +792,19 @@ export default {
   z-index: -1;
 }
 
-.hide-overlay-on-hover:hover #awp-overlay {
-  display: none;
+#awp-overlay {
+  pointer-events: none;
 }
 
-.float-alert-wrapper {
-  position: fixed;
-  z-index: 9999;
-  bottom: 5px;
-  left: 5px;
-  transform: scale(.8);
-  transform-origin: bottom left;
-}
-.float-alert {
-  margin-top: 6px;
-  background: rgb(22, 30, 41);
-}
 
 [data-saving-image="true"] #editor-canvas-content {
   transform: none !important;
   transform-origin: top left !important;
 }
 
-.cover-actions {
-  position: absolute;
-  z-index: 9999999;
-  top: 0;
-  right: 0;
-  // left: 0;
-  // background: rgba(#000, .7);
-  padding: 10px 50px 0px 0px;
-  border-radius: 0 0 0 36px;
-  &, button {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-  }
-  button {
-    padding: 15px 25px;
-    background: #161e29;
-    box-shadow: 0 2px 15px #0798f1, 0 2px 20px 4px #161e29;
-    color: #fff;
-    font-size: 15px;
-    border-radius: 999px;
-    border: none;
-    outline: none;
-    border: 2px solid #31b1ff;
-    cursor: pointer;
-  }
-  .remove-all-reread {
-    svg {
-      color: lighten(red, 15);
-    }
-  }
-}
-
-:global(.tier-container) {
-  width: 324px !important;
-  display: block !important;
-  font-size: 0 !important;
-  overflow: hidden auto !important;
-  margin: 0 !important;
-  box-shadow: -4px 0 10px darken( rgba(#171e29, .3), 20) !important;
-  background: #171e29 !important;
-  text-align: center !important;
-  padding: 25px 0 !important;
-  box-sizing: border-box !important;
-}
-
-:global(.tier-container .cover) {
-  width:  118px !important;
-  height: 118px !important;
-  padding: 0 !important;
-}
-:global(.tier-container .cover img) {
-  width:  118px !important;
-  height: 118px !important;
-  box-shadow: 0 0 5px rgba(#000, .5);
-}
-:global(.tier-container .cover) {
-  margin: 5px !important;
-}
-:global(.tier-container .cover .cover-heart-icon) {
-  top: 5px !important;
-  right: 5px !important;
-}
-:global(.tier-container .cover .cover-heart-icon svg) {
-  font-size: 19px !important;
-  line-height: 19px !important;
-}
-:global(.tier-container .cover .cover-star-icons) {
-  height: 15px !important;
-}
-:global(.tier-container .cover .cover-star-icons svg) {
-  font-size: 19px !important;
-  line-height: 19px !important;
-}
-:global(.tier-container .author-and-title) {
-  font-size: 19px !important;
-  line-height: 19px !important;
-  color: #fff !important;
-  width: 100% !important;
-  display: none !important;
-}
-
-
-:global(.tier-container) {
-  transition: all 300ms ease-in-out;
-}
-:global(.tier-container-collapse) {
-  width: 0px !important;
-}
-
-:global(.tier-container .cover) {
-  transition: all 250ms ease;
-}
-:global(.tier-container-collapse .cover) {
-  opacity: 0 !important;
-}
 
 :global(.sortable-chosen) {
   // filter: grayscale(1);
 }
-
-.legend {
-  position: absolute;
-  bottom: 0px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-</style>
-
-<style lang="scss">
-
-// .moveable-control-box {
-//   display: none;
-// }
 
 </style>

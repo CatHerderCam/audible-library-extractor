@@ -1,10 +1,10 @@
 <template>
   <div class="mobile-back-btns-wrapper" :class="{ 'viewport-float': viewportFloat }">
-    <div class="mobile-back-btns" :class="{ disabled: $store.state.navHistory.back.length < 1 }" @click.prevent="navigate('back')">
+    <div class="mobile-back-btns" :class="{ disabled: $store.state.navHistory.back.length < 1 }" @click.prevent="navigate('back')" @mousedown="$haptic(1)">
       <fa-solid-chevron-left/>
     </div>
     
-    <div class="mobile-back-btns" :class="{ disabled: $store.state.navHistory.forward.length < 1 }" @click.prevent="navigate('forward')">
+    <div class="mobile-back-btns" :class="{ disabled: $store.state.navHistory.forward.length < 1 }" @click.prevent="navigate('forward')" @mousedown="$haptic(1)">
       <fa-solid-chevron-right/>
     </div>
   </div>
@@ -35,6 +35,8 @@ export default {
   position: absolute;
   z-index: 1;
   right: 65px;
+  bottom: 0;
+  height: 60px;
   white-space: nowrap;
 }
 .mobile-back-btns {

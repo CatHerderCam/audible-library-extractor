@@ -14,11 +14,11 @@
         <div class="time-display right" v-if="store.audioPlayer.timeDisplayLeft">-{{ store.audioPlayer.timeDisplayLeft }}</div>
 
         <div class="player-buttons">
-          <div class="play" v-if="!$store.state.audioPlayer.playing" @click="$compEmitter.emit('audio-player-play')"><fa6-solid-play/></div>
-          <div class="pause" v-else @click="$compEmitter.emit('audio-player-pause')"> <fa6-solid-pause/></div>
-          <div class="stop" @click="$compEmitter.emit('audio-player-stop')">          <fa-solid-times/></div>
-          <div class="back" @click="$compEmitter.emit('audio-player-seek-back')">      <ic-baseline-replay-30/></div>
-          <div class="forward" @click="$compEmitter.emit('audio-player-seek-forward')"><ic-baseline-forward-30/></div>
+          <div class="play" v-if="!$store.state.audioPlayer.playing" @click="$compEmitter.emit('audio-player-play')" @mousedown="$haptic(1)"><fa6-solid-play/></div>
+          <div class="pause" v-else @click="$compEmitter.emit('audio-player-pause')" @mousedown="$haptic(1)"> <fa6-solid-pause/></div>
+          <div class="stop" @click="$compEmitter.emit('audio-player-stop')" @mousedown="$haptic(1)">          <fa-solid-times/></div>
+          <div class="back" @click="$compEmitter.emit('audio-player-seek-back')" @mousedown="$haptic(1)">      <ic-baseline-replay-30/></div>
+          <div class="forward" @click="$compEmitter.emit('audio-player-seek-forward')" @mousedown="$haptic(1)"><ic-baseline-forward-30/></div>
         </div>
         
       </div>
@@ -92,7 +92,7 @@ export default {
     margin-top: 0 !important;
     box-sizing: border-box;
     // background: themed(backColor);
-    background: darken( themed(elementColor), 5);
+    background: color.adjust(themed(elementColor), $lightness: -5%);
     color: themed(frontColor);
     position: relative;
     z-index: 0;
@@ -194,7 +194,7 @@ export default {
     /******** Chrome, Safari, Opera and Edge Chromium styles ********/
     /* slider track */
     input[type="range"]::-webkit-slider-runnable-track {
-      border: 9px solid darken( themed(elementColor), 5);
+      border: 9px solid color.adjust(themed(elementColor), $lightness: -5%);
       border-left: none;
       border-right: none;
       background-color: $trackBackground;
@@ -224,7 +224,7 @@ export default {
     /*********** Firefox styles ***********/
     /* slider track */
     input[type="range"]::-moz-range-track {
-      border: 9px solid darken( themed(elementColor), 5);
+      border: 9px solid color.adjust(themed(elementColor), $lightness: -5%);
       border-left: none;
       border-right: none;
       background-color: $trackBackground;

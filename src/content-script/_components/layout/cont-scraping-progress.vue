@@ -68,8 +68,6 @@
       <img :src="store.progress.thumbnail" alt="" style="max-height: 110px;" />
     </div>
     
-    <!-- <div v-if="store.taking_a_break"><iconoir-coffee-cup style="font-size: 20px;" /></div>
-    <div v-if="store.lastFailedRequestStatus">status: {{ store.lastFailedRequestStatus }}</div> -->
     
     <div class="footnote">
       Keep this tab and the browser window on top until the extraction is completed.
@@ -112,7 +110,6 @@ export default {
   methods: {
     wishlistLinkClicked( e ) {
       
-      this.$store.commit('update', { key: 'sticky.openOnLoad', value: true });
       chrome.runtime.sendMessage({ action: "refresh", url: window.location.origin + window.location.pathname });
       chrome.runtime.sendMessage({ action: "newPage", url: e.target.href });      
       

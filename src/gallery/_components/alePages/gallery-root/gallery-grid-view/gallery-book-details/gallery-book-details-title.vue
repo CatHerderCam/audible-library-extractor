@@ -3,33 +3,39 @@
     
     <h2 class="book-title">
       <a :href="audibleURL" target="_blank" rel="noopener noreferrer">
-        <span v-if="!$store.state.sticky.bookDetailSettings.titleShort" v-html="book.title || book.titleShort"></span>
-        <span v-else v-html="book.titleShort || book.title"></span>
+        <span v-html="mainTitle"></span>
+        <fa6-solid-arrow-up-right-from-square class="external-link-icon" />
       </a>
     </h2>
-    
-    <div class="subblementary-book-title" v-if="showSubtitle" v-html="book.subtitle || book.title"></div>
+
+    <div class="subblementary-book-title" v-if="showSubtitle" v-html="subtitleText"></div>
     
   </div>
 </template>
 
 <script>
 import makeUrl from "@output-mixins/gallery-makeFullUrl.js";
+import decodeHTMLEntities from "@output-mixins/gallery-decode-html-entities.js";
 
 export default {
   name: "bookDetailsTitle",
   props: ["book", "tempAsin"],
-  mixins: [ makeUrl ],
+  mixins: [ makeUrl, decodeHTMLEntities ],
   computed: {
-    showSubtitle() {
-      
-      const preferSubtitle = this.$store.state.sticky.bookDetailSettings.titleShort;
-      const hasSubtitle = !!this.book.subtitle;
-      const noTitleDuplicate = !!this.book.title && !!this.book.titleShort && this.book.title !== this.book.titleShort;
-      
-      return preferSubtitle && ( hasSubtitle || noTitleDuplicate );
-      
+
+    preferShortTitle() {
+      return !this.$store.state.sticky.bookDetailSettings.titleLong;
     },
+    mainTitle() {
+      return this.preferShortTitle ? ( this.book.titleShort || this.book.title ) : ( this.book.title || this.book.titleShort );
+    },
+    subtitleText() {
+      return this.book.subtitle || this.book.title;
+    },
+    showSubtitle() {
+      return this.preferShortTitle && !!this.subtitleText && this.decodeHTMLEntities(this.subtitleText) !== this.decodeHTMLEntities(this.mainTitle);
+    },
+
     audibleURL() {
       if ( this.tempAsin ) {
         const seriesObj = _.get(this.book, 'series.0');
@@ -60,6 +66,20 @@ h2.book-title {
     }
     &:hover {
       text-decoration: underline;
+    }
+    svg {
+      display: inline-block;
+      position: relative;
+      top: .7em;
+      padding-left: .5em;
+    }
+  }
+  .external-link-icon {
+    font-size: 0.4em;
+    padding-left: 0.3em;
+    vertical-align: super;
+    @include themify($themes) {
+      color: rgba(themed(frontColor), 0.4);
     }
   }
 }

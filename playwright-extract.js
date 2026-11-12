@@ -118,15 +118,28 @@ async function runExtraction() {
     process.exit(1);
   }
 
-  // Click the injected button to open the extension UI panel.
-  console.log('Opening extension UI...');
-  await page.click('#audible-library-extractor-btn');
+  // #audible-library-extractor-btn is the mount point for the launcher Vue app.
+  // Its main button toggles a popover with the extraction tree + actions.
+  // (Playwright auto-waits for the button to become enabled.)
+  console.log('Opening extension launcher...');
+  const launcherBtn = page.locator('#audible-library-extractor-btn .ale-launcher-main');
+  await launcherBtn.waitFor({ state: 'visible', timeout: 15_000 });
+  await launcherBtn.click();
 
-  // The Vue app mounts and shows the extraction menu.
-  const extractBtn = page.locator('button.extract.is-info.is-large');
+  // The primary action is "Quick extraction" when data already exists in
+  // extension storage, or "Full extraction" on a fresh profile. The latter
+  // opens an in-page Naive UI confirmation dialog (not a browser alert).
+  const extractBtn = page.locator('button.ale-launcher-extract-primary');
   await extractBtn.waitFor({ state: 'visible', timeout: 15_000 });
-  console.log('Starting extraction...');
+  const extractLabel = (await extractBtn.innerText()).trim();
+  console.log(`Starting extraction (${extractLabel})...`);
   await extractBtn.click();
+
+  if (/full extraction/i.test(extractLabel)) {
+    const confirmBtn = page.locator('.n-dialog button', { hasText: 'Full extraction' });
+    await confirmBtn.waitFor({ state: 'visible', timeout: 10_000 });
+    await confirmBtn.click();
+  }
 
   console.log('Extraction running — waiting for gallery page to open...');
   let galleryPage;
@@ -144,20 +157,22 @@ async function runExtraction() {
   console.log('Gallery opened — waiting for it to finish loading...');
   await galleryPage.waitForLoadState('networkidle', { timeout: 60_000 });
 
-  // The "Save gallery website" option lives in a CSS hover sub-menu under
-  // the "Extension Tools" group in the navigation sidebar.
-  console.log('Opening the "Save gallery website" dialog...');
+  // The "Upload gallery website" tool lives in the hover mega-menu under the
+  // "Extension Tools" group in the navigation sidebar.
+  console.log('Opening the "Upload gallery website" dialog...');
   const extensionToolsGroup = galleryPage.locator('.menu-item.extension-tools').first();
   await extensionToolsGroup.waitFor({ state: 'visible', timeout: 15_000 });
   await extensionToolsGroup.hover();
 
-  const saveNavItem = galleryPage.locator('.sub-menu .menu-item-text', {
-    hasText: 'Save gallery website',
+  const saveNavItem = galleryPage.locator('.extension-mega-menu .mega-row--tool', {
+    hasText: 'Upload gallery website',
   });
   await saveNavItem.waitFor({ state: 'visible', timeout: 5_000 });
   await saveNavItem.click();
 
-  const downloadBtn = galleryPage.locator('button.save-btn.save-gallery');
+  // The modal shows the GitHub API uploader first; the ZIP export button
+  // sits below it (hidden only while a GitHub API upload is in progress).
+  const downloadBtn = galleryPage.locator('button.export-zip-btn');
   await downloadBtn.waitFor({ state: 'visible', timeout: 10_000 });
 
   console.log('Packaging gallery zip (this may take a minute)...');

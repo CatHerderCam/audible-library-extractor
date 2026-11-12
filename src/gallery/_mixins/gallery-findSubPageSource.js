@@ -16,13 +16,12 @@ export default {
     findSubPageSource: function() {
       const source = this.$route.query.subPageSource || this.$store.state.sticky.subPageSource;
       this.$store.commit('prop', { key: 'sticky.subPageSource', value: source });
-      const sourceKey = source === 'library' ? 'books' : null;
       return {
-        collection: this.$store.state.library[ sourceKey || source ],
+        collection: this.$store.state.audibledata[ source ],
         name: source,
         wishlist: source === 'wishlist',
-        library: source === 'library' || source === 'books',
-        books: source === 'library' || source === 'books',
+        library: source === 'library',
+        books: source === 'library',
       };
     },
     
@@ -48,8 +47,15 @@ export default {
 
   beforeCreate: function () {
 
+    // Clear ALL collection state, not just the page/mutating ones. The search query persists
+    // across pages, so 'searchCollection' can still hold the previous page's results (e.g.
+    // series entities) when this sub page mounts. The 'collection' getter returns it while a
+    // search is active, so without this the new page's v-for renders the old items for a tick
+    // and feeds a foreign item (no 'url') to this page's rowRoute, which vue-router rejects
+    // ('Missing required param'). Cleared here so nothing stale renders before search reruns.
     this.$store.commit("prop", {key: "pageCollection", value: []});
     this.$store.commit("prop", {key: "mutatingCollection", value: []});
+    this.$store.commit("prop", {key: "searchCollection", value: []});
 
   },
 

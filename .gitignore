@@ -37,3 +37,6 @@ output/
 
 # Generated lock file from npm (project uses yarn.lock)
 package-lock.json
+
+# Local GitHub Pages emulator extracted site
+gh-pages-test/site/

@@ -1,7 +1,6 @@
 <template>
   <cont-overlay>
-    <cont-menu-screen v-if="ui === 'menu-screen'" :domainExtension="domainExtension" :wishlistUrl="wishlistUrl" />
-    <cont-scraping-progress v-else-if="ui === 'scraping'" :domainExtension="domainExtension" />
+    <cont-scraping-progress :domainExtension="domainExtension" />
   </cont-overlay>
 </template>
 
@@ -30,6 +29,8 @@ import getDataFromPurchaseHistory from "./_components/_mixins/main-step/process-
 // Outside
 import timeStringToSeconds from "@output-mixins/gallery-timeStringToSeconds.js";
 import secondsToTimeString from "@output-mixins/gallery-secondsToTimeString.js";
+
+const NEW_BOOKS_MAX_AGE_DAYS = 90;
 
 // import eruda from "eruda";
 // import erudaMemory from "eruda-memory";
@@ -70,7 +71,6 @@ export default {
         books: [],
         storePageMissing: []
       },
-      ui: "menu-screen",
       doStorePageTest: [
         // { storePageRequestUrl: "https://www.audible.com/pd/B08N8452GZ" },
       ],
@@ -104,16 +104,18 @@ export default {
     init_step_extract: function( config ) {
       
       const vue = this;
-      chrome.storage.local.get(null).then(hotpotato => {
-        
-        if ( hotpotato.chunks && hotpotato.chunks.length ) vue.glueFriesBackTogether(hotpotato);
-        
-        vue.ui = "scraping";
+      chrome.storage.local.get(['audibledata', 'metadata']).then(hotpotato => {
+
+        // Always unglue: this also flattens metadata back to root and clears out a
+        // stale empty audibledata ({}) that would otherwise block re-chunking below.
+        vue.glueFriesBackTogether(hotpotato);
+
         vue.$nextTick(function() {
           
           hotpotato = hotpotato || {};
-          if ( hotpotato.books ) config.oldBooksLength = hotpotato.books.length;
+          if ( hotpotato.library ) config.oldBooksLength = hotpotato.library.length;
           hotpotato.config = config;
+          hotpotato.extractionStartedAt = Date.now();
           
           const waterfallArray = [
             function(callback) { callback(null, hotpotato); },
@@ -123,7 +125,7 @@ export default {
             vue.getDataFromSeriesPages,     // Requires store page data (for fallback)
             function(hotpotato, callback) { 
               
-              if ( !_.find(hotpotato.config.steps, { name: "books" }) ) {
+              if ( !_.find(hotpotato.config.steps, { name: "library" }) ) {
                 callback(null, hotpotato); 
                 return;
               }
@@ -135,7 +137,8 @@ export default {
             },
             vue.getDataFromCollections,     // Can be scraped alone (but requires library data in the gallery...)
             vue.getDataFrompUserReviews,
-            function(hotpotato, callback) { 
+            vue.getDataFromPurchaseHistory,
+            function(hotpotato, callback) {
               
               vue.saveExtractionSoFar( hotpotato, ( hotpotato ) => {
                 
@@ -228,89 +231,120 @@ export default {
 
     init_step_output: function( config ) {
       
-      let newData = {config: config, extras: { 'domain-extension': this.domainExtension }};
-      chrome.storage.local.set( newData ).then(() => {
+      chrome.storage.local.set({ metadata: { config, extras: { 'domain-extension': this.domainExtension } } }).then(() => {
         this.goToOutputPage({ useStorageData: true });
       });
       
     },
     
-    outputCleanup( hotpotato ) {
+    outputCleanup( hotpotato, isFinal ) {
       
       let collections = hotpotato.collections;
       let archive = collections ? _.find( collections, { id: '__ARCHIVE' }) : null;
       if ( archive ) archive.description = '';
       
-      let removeStragglers = function( key ) {
-        
-        if ( hotpotato[ key ] ) {
-          _.each(hotpotato[ key ], function( book ) {
-            
-            if ( book.storePageRequestUrl ) delete book.storePageRequestUrl;
-            if ( book.isNewThisRound ) delete book.isNewThisRound;
-            if ( book.requestUrl ) delete book.requestUrl;
-            // Add prop "archived" if a book is in the archive....
-            // This helps simplify the filters related to archive
-            if ( key === 'books' && book.asin && _.get(archive, 'books.0') ) {
-              let bookInArchive = _.includes( archive.books, book.asin );
-              if ( bookInArchive ) book.archived = true;
-            }
-            
-            // Adding books that are no longer sold into series.
-            if ( key === 'books' ) {              
-              _.each( book.series, ( series ) => {
+      let finalizeBooks = function( key ) {
+
+        if ( !hotpotato[ key ] ) return;
+
+        _.each(hotpotato[ key ], function( book ) {
+
+          // STRIP OUT PROPERTIES USED DURING PROCESSING 
+          if ( book.storePageRequestUrl ) delete book.storePageRequestUrl;
+          if ( book.isNewThisRound ) delete book.isNewThisRound;
+          if ( book.requestUrl ) delete book.requestUrl;
+
+          // MARK ARCHIVED BOOKS
+          // Achive property is denormalized onto each book to simplify archive-related filters in the gallery.
+          if ( key === 'library' && book.asin && _.get(archive, 'books.0') ) {
+            let bookInArchive = _.includes( archive.books, book.asin );
+            if ( bookInArchive ) book.archived = true;
+          }
+
+          // INSERT DISCONTINUED BOOKS INTO SERIES
+          if ( key === 'library' ) {
+            _.each( book.series, ( series ) => {
+
+              // Skip books without an ASIN: nothing to insert
+              const sourceBookAsin = _.get(book, 'asin');
+              if ( !sourceBookAsin ) return;
+
+              // Find the series
+              let foundSeries = _.find(hotpotato.series, { asin: series.asin });
+
+              // Series doesn't exist yet, create it
+              if ( !foundSeries ) {
+                foundSeries = { asin: series.asin, name: series.name, url: series.url, books: [], allBooks: [], detachedBooks: true };
+                if ( !hotpotato.series ) hotpotato.series = [];
+                hotpotato.series.push( foundSeries );
+              }
+
+              // If the book isn't already in the series, add it.
+              if ( !_.includes(foundSeries.books, sourceBookAsin) ) {
+              
+                // The `detachedBooks` signals to the gallery this series contains discontinued books.
+                foundSeries.detachedBooks = true;
+                foundSeries.books.push( book.asin );
                 
-                const foundSeries = _.find(hotpotato.series, { asin: series.asin});
+                // Build a minimal `allBooks` entry using the book's own series metadata
+                // for the number, since the series page won't have listed it.
+                const newAddition = _.pick(book, [ 'titleShort', 'title', 'cover', 'bookNumbers', 'asin' ]);
+                newAddition.bookNumbers = _.isArray(series.bookNumbers) ? series.bookNumbers.join(', ') : series.bookNumbers;
                 
-                const books = _.get(foundSeries, 'books');
-                const sourceBookAsin = _.get(book, 'asin');
-                // Remember to fix this. Clearly in my library this is conditional is causing issues that shouldn't happen.
-                if ( !books || !sourceBookAsin ) return;
+                // Try to slot the book next to others sharing the same number so the order
+                // stays sensible. Falls back to appending at the end if nothing matches.
+                const firstNumber = _.first( _.castArray(series.bookNumbers) );
+                const targetIndex = _.findLastIndex(foundSeries.allBooks, ( b ) => {
+                  return b.bookNumbers == firstNumber || b.bookNumbers == newAddition.bookNumbers;
+                });
+
+                // Insert after the last book sharing the same number to keep order sensible
+                if ( targetIndex > -1 ) foundSeries.allBooks.splice(targetIndex+1, 0, newAddition);
+                // No positional match found — append to the end
+                else foundSeries.allBooks.push(newAddition);
                 
-                const detachedFromSeries = !_.includes(books, sourceBookAsin);
-                if ( detachedFromSeries ) {
-                  foundSeries.detachedBooks = true;
-                  foundSeries.books.push( book.asin );
-                  const newAddition = _.pick(book, [ 'titleShort', 'title', 'cover', 'bookNumbers', 'asin' ]);
-                  newAddition.bookNumbers = _.isArray(series.bookNumbers) ? series.bookNumbers.join(', ') : series.bookNumbers;
-                  const firstNumber = _.first(series.bookNumbers);
-                  const targetIndex = _.findLastIndex(foundSeries.allBooks, ( book ) => {
-                    return book.bookNumbers == firstNumber || book.bookNumbers == newAddition.bookNumbers;
-                  });
-                  
-                  // Found a book with the same number
-                  if ( targetIndex > -1 ) {
-                    foundSeries.allBooks.splice(targetIndex+1, 0, newAddition);
-                  }
-                  else {
-                    foundSeries.allBooks.push(newAddition);
-                  }
-                }
-              });
-            }
-            
-          });
-        }
-        
+              }
+            });
+          }
+
+        });
+
       };
+
+      finalizeBooks('library');
+      finalizeBooks('wishlist');
+
+      if ( isFinal ) {
+        let books = _.concat( hotpotato.library, hotpotato.wishlist );
+            books = _.compact( books );
+        this.stripExpiredNewBooks( books, NEW_BOOKS_MAX_AGE_DAYS );
+
+        const libraryBooks = _.filter( _.flatten( hotpotato.library ), ( book ) => !book.podcastParent );
+        this.$store.commit('update', [
+          { key: 'newBooksCountLibrary', value: _.filter( libraryBooks, 'isNew' ).length },
+          { key: 'newBooksCountWishlist', value: _.filter( _.flatten( hotpotato.wishlist ), 'isNew' ).length },
+        ]);
+      }
+
+      // return;
       
-      removeStragglers('books'); // Library
-      removeStragglers('wishlist'); 
-      
-      // Make sure library books are excluded from the wishlist no matter hwhat...
-      if ( _.get(hotpotato, 'books.0') && _.get(hotpotato, 'wishlist.0') ) {
+      // Make sure library books are excluded from the wishlist no matter hwhat. Only run on the
+      // final save, not the mid-waterfall checkpoint saves: pruning overlap early can strip owned
+      // books out of hotpotato.wishlist before the wishlist step gets a chance to match them
+      // against storage for its own old/new bookkeeping.
+      if ( isFinal && _.get(hotpotato, 'library.0') && _.get(hotpotato, 'wishlist.0') ) {
         _.remove( hotpotato.wishlist, function( book ) {
-          if ( book.asin ) return _.find( hotpotato.books, { asin: book.asin });
+          if ( book.asin ) return _.find( hotpotato.library, { asin: book.asin });
         });
       }
       
     },
     
-    saveExtractionSoFar( hotpotato, callback ) {
+    saveExtractionSoFar( hotpotato, callback, isFinal ) {
       
       let vue = this;
       
-      this.outputCleanup( hotpotato );
+      this.outputCleanup( hotpotato, isFinal );
 
       if ( hotpotato.config ) {
         if ( hotpotato.config.steps || hotpotato.config.extraSettings ) {
@@ -325,21 +359,26 @@ export default {
       
       this.addDataVersions( hotpotato );
       
-      if (!hotpotato.chunks ) {
-        if ( hotpotato.books    ) this.addedOrder(hotpotato.books);
-        if ( hotpotato.books    ) this.languageCorrections(hotpotato.books);
+      // isEmpty (not just !audibledata) so a stale empty {} from a previous save
+      // doesn't block chunking the data that exists now.
+      if ( _.isEmpty( hotpotato.audibledata ) ) {
+        if ( hotpotato.library ) this.addedOrder(hotpotato.library);
+        if ( hotpotato.library ) this.languageCorrections(hotpotato.library);
         if ( hotpotato.wishlist ) this.addedOrder(hotpotato.wishlist);
         this.makeFrenchFries(hotpotato);
       }
-      
-      chrome.storage.local.clear().then(() => {
-        chrome.storage.local.set(hotpotato).then(() => {
-          
-            if ( _.get(hotpotato, 'chunks.0') ) vue.glueFriesBackTogether(hotpotato);
-            
-            callback( hotpotato );
-          
-        });
+
+      chrome.storage.local.set({
+        metadata: hotpotato.metadata,
+        audibledata: hotpotato.audibledata,
+      }).then(() => {
+
+        // Always unglue so the next waterfall step gets config/arrays back at root,
+        // even when nothing was chunked this round (audibledata ended up {}).
+        vue.glueFriesBackTogether(hotpotato);
+
+        callback( hotpotato );
+
       });
       
     },
@@ -360,16 +399,15 @@ export default {
       
       const pageAddress = window.location.origin + window.location.pathname;
       
-      this.$store.commit('update', { key: 'sticky.openOnLoad', value: true });
-      
       // No need to save anything...
       if ( hotpotato.useStorageData ) {
         chrome.runtime.sendMessage({ action: "openOutput", url: pageAddress });
       }
       else {
+        // isFinal: safe to prune wishlist/library overlap now that every step is done
         this.saveExtractionSoFar( hotpotato, () => {
           chrome.runtime.sendMessage({ action: "openOutput", url: pageAddress });
-        }); 
+        }, true );
       }
       
     },
@@ -382,7 +420,7 @@ export default {
       let version = chrome.runtime.getManifest().version;
       
       // If a step was just extracted and there was no existing data update data version...
-      if ( _.find( _.get(hotpotato, 'config.steps'), { name: 'library', value: true })     && !hasData.books       ) hotpotato.version.library     = version;
+      if ( _.find( _.get(hotpotato, 'config.steps'), { name: 'library', value: true })     && !hasData.library     ) hotpotato.version.library     = version;
       if ( _.find( _.get(hotpotato, 'config.steps'), { name: 'collections', value: true }) && !hasData.collections ) hotpotato.version.collections = version;
       if ( _.find( _.get(hotpotato, 'config.steps'), { name: 'wishlist', value: true })    && !hasData.wishlist    ) hotpotato.version.wishlist    = version;
       

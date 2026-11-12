@@ -4,12 +4,12 @@
   <div >
     <img :src="img" alt="">
   </div>
-  <fa-solid-times class="hide" @click="hide" />
+  <fa-solid-times class="hide" @click="hide" @mousedown="$haptic(1)" />
 </div>
 </template>
 
 <script>
-import contextMenuImage from './contextMenuReminder.png';
+import contextMenuImage from './contextMenuReminder.png?inline';
 
 export default {
   name: "contextMenuReminder",
@@ -44,7 +44,7 @@ span { padding-bottom: 10px; }
   padding: 10px 20px;
   @include themify($themes) {
     border: 2px solid themed(audibleOrange);
-    background: lighten( themed(backColor), 9);
+    background: color.adjust(themed(backColor), $lightness: 9%);
     color: themed(frontColor);
   }
 }
@@ -65,7 +65,7 @@ a {
   border-radius: 999999px;
   @include themify($themes) {
     border: 2px solid themed(audibleOrange);
-    background: lighten( themed(backColor), 9);
+    background: color.adjust(themed(backColor), $lightness: 9%);
     color: themed(frontColor);
   }
   position: absolute;

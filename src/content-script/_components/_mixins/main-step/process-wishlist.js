@@ -24,6 +24,8 @@ export default {
         ]);
 
         const vue = this;
+        const bookCounts = { new: 0, old: 0 };
+
         waterfall(
           [
             function(callback) {
@@ -62,7 +64,7 @@ export default {
                   return prep.urlObj.toString();
                 }),
                 step: function(response, stepCallback) {
-                  vue.getBooksWishlist(response, hotpotato, stepCallback);
+                  vue.getBooksWishlist(response, hotpotato, bookCounts, stepCallback);
                 },
                 flatten: true,
                 done: function(books) {
@@ -73,7 +75,7 @@ export default {
           ],
           function(err, books) {
             
-            if ( books.length ) hotpotato.wishlist = books;
+            hotpotato.wishlist = books;
             
             vue.$nextTick(function() {
               hotpotato.config.getStorePages = 'wishlist';
@@ -85,7 +87,7 @@ export default {
       }
     },
     
-    getBooksWishlist: function(response, hotpotato, completeStep) {
+    getBooksWishlist: function(response, hotpotato, bookCounts, completeStep) {
       let vue = this;
       const audible = $($.parseHTML(response.data)).find("div.adbl-main")[0];
       response.data = null;
@@ -103,8 +105,14 @@ export default {
         }
         asin  = DOMPurify.sanitize( asin );
         
-        let carryOnMyWaywardPines = hotpotato.books ? !_.find( hotpotato.books, { asin: asin }) : true;
-        if ( carryOnMyWaywardPines ) {
+        // Audible doesn't auto-remove wishlist books when you purchase them, so skip ones already in the library
+        const alreadyOwned = hotpotato.library ? _.find( hotpotato.library, { asin: asin }) : false;
+        if ( alreadyOwned ) {
+          hotpotato.wishlistAlreadyOwned = hotpotato.wishlistAlreadyOwned || [];
+          hotpotato.wishlistAlreadyOwned.push( asin );
+        }
+
+        if ( !alreadyOwned ) {
           
           let bookInMemory = _.find(hotpotato.wishlist, ["asin",  asin]);
           let fullScan_ALL_partialScan_NEW = (vue.$store.state.storageHasData.wishlist && !bookInMemory) || !vue.$store.state.storageHasData.wishlist;
@@ -141,7 +149,7 @@ export default {
             // SERIES
             const series = _thisRow.querySelector(".seriesLabel > span");
             if ( series ) book.series = vue.getSeries( series );
-            // if ( series ) book.series = vue.getSeries( series, 'reverseOutput');
+            // if ( series ) book.series = vue.getSeries( series, { reverse: true });
             
             // LENGTH
             const length = _thisRow.querySelector(".runtimeLabel > span");
@@ -206,8 +214,10 @@ export default {
           }
           
           // From plus catalog
-          const fromPlusCatalog = _thisRow.querySelector('.discovery-add-to-library-button');
-          if (fromPlusCatalog) book.fromPlusCatalog = true;
+          const fromPlusCatalog = _thisRow.querySelector('.discovery-add-to-library-button') || 
+                                  _thisRow.querySelector('.ucx-add-to-library-button') ||
+                                  _thisRow.querySelector('.adblBuyBoxMinervaPlayNow');
+          if ( fromPlusCatalog ) book.fromPlusCatalog = true;
           
           const getPrice = ( el ) => {
             
@@ -279,17 +289,27 @@ export default {
           
           // - - - - - - -
           
-          if ( vue.$store.state.storageHasData.books ) {
+          if ( vue.$store.state.storageHasData.library ) {
             let newAddition = !bookInMemory;
             let newFromStorage = bookInMemory && bookInMemory.isNew;
-            if ( newAddition || newFromStorage ) book.isNew = true;
+            if ( newAddition ) book.isNew = hotpotato.extractionStartedAt;
+            else if ( newFromStorage ) book.isNew = newFromStorage;
           }
           
-          if (fullScan_ALL_partialScan_NEW) {
-            book.isNewThisRound = true;
+          if (fullScan_ALL_partialScan_NEW) book.isNewThisRound = true;
+
+          // Partial scan: show a live "updating/adding" count instead of a static text.
+          if ( vue.$store.state.storageHasData.wishlist ) {
+            if ( fullScan_ALL_partialScan_NEW ) bookCounts.new++;
+            else bookCounts.old++;
+            vue.$store.commit('update', { key: 'progress.text', value: vue.buildLibraryProgressText( bookCounts ) });
+          }
+          // Full scan: keeps the static "Scanning..." text, but the number of books found
+          // so far is still shown via the progress bar's step counter.
+          else {
             vue.$store.commit('update', { key: 'progress.max', add: 1 });
           }
-          
+
           wishlist.push(book);
           
         }

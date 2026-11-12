@@ -26,7 +26,7 @@ export default {
 	
 	data() {
 		return {
-			coversMax: 5
+			coversMax: 10
 		}
 	},
 	
@@ -48,6 +48,6 @@ export default {
 
 <style lang="scss" scoped>
 
-	@import "@gallery/box-layout.scss";
+	@use "@gallery/box-layout.scss" as *;
 	
 </style>

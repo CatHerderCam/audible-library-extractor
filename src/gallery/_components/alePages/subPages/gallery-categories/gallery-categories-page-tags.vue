@@ -22,7 +22,7 @@
 						}, 
 						query: { 
 							subPageSource: subPageSource.name,
-							filterExtras: encodeURIComponent(`tags:${tag.name}`),
+							filterExtras: JSON.stringify([{ key: 'tags', value: [tag.name] }]),
 							tagTitle: tag.name,
 						}, 
 					}"
@@ -134,7 +134,7 @@ export default {
 
 <style lang="scss" scoped>
 
-	@import "@gallery/box-layout.scss";
+	@use "@gallery/box-layout.scss" as *;
 	
 	.category-tags-wrapper {
 		@include themify($themes) {
